@@ -28,7 +28,7 @@ def _wait_for_port(host: str, port: int, timeout: float = 20.0) -> bool:
 
 
 def run_server() -> None:
-    uvicorn.run("farm.main:app", host=HOST, port=PORT, log_level="info", reload=False)
+    uvicorn.run("farm.main:app", host=HOST, port=PORT, log_level="info", access_log=False, reload=False)
 
 
 def main() -> None:

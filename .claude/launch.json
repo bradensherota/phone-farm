@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "farm",
+      "runtimeExecutable": "./run.sh",
+      "runtimeArgs": ["--server"],
+      "port": 8765
+    }
+  ]
+}

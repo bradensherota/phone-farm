@@ -1,0 +1,8 @@
+.venv/
+data/
+sim_media/
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.DS_Store

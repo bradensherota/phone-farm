@@ -1,0 +1,23 @@
+[project]
+name = "phone-farm"
+version = "0.1.0"
+description = "Local Mac control plane for a USB iPhone posting farm"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "sqlalchemy>=2.0",
+  "pydantic>=2.7",
+  "pywebview>=5.1",
+  "pillow>=10.3",
+]
+
+[project.optional-dependencies]
+# Real-device drivers. Install on the Mac that has Xcode: `uv sync --extra ios`
+ios = [
+  "pymobiledevice3>=4.14",
+  "facebook-wda>=1.4.6",
+]
+
+[tool.uv]
+package = false

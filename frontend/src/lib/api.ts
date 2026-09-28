@@ -28,6 +28,9 @@ export interface Media {
   index: number | null;
 }
 
+export interface WakeTestEvent { at: string; step: number; phase: "start" | "wake" | "sleep" | "done" | "cancel"; ok: boolean; detail: string }
+export interface WakeTest { device_id: string; status: "none" | "running" | "done" | "cancelled"; steps: number[]; index: number; started_at?: string; next_at: string | null; events: WakeTestEvent[] }
+
 export interface Device {
   id: string;
   name: string;
@@ -159,6 +162,9 @@ export const api = {
   connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
   runDay: (id: string, run_date: string) => req<{ started: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
+  wakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`),
+  startWakeTest: (id: string, steps: number[]) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "POST", body: JSON.stringify({ steps }) }),
+  cancelWakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "DELETE" }),
   wakeDevice: (id: string) => req<{ locked: boolean }>(`/devices/${id}/wake`, { method: "POST" }),
   sleepDevice: (id: string) => req<{ locked: boolean; error?: string }>(`/devices/${id}/sleep`, { method: "POST" }),
   clearQueue: (id: string) => req<{ cleared: boolean }>(`/devices/${id}/queue/clear`, { method: "POST" }),

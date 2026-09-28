@@ -114,6 +114,29 @@ def sleep_device(device_id: str):
     return {"locked": locked, "error": "" if locked else (err or "screen did not lock")}
 
 
+@router.get("/{device_id}/wake-test")
+def get_wake_test(device_id: str):
+    from .. import waketest
+    return waketest.get(device_id) or {"device_id": device_id, "status": "none", "steps": waketest.DEFAULT_STEPS, "index": 0, "events": [], "next_at": None}
+
+
+@router.post("/{device_id}/wake-test")
+def start_wake_test(device_id: str, body: dict | None = None):
+    """Lock the phone now, then wake+lock it after each interval in `steps` (minutes)."""
+    from .. import waketest
+    steps = (body or {}).get("steps") or waketest.DEFAULT_STEPS
+    try:
+        return waketest.start(manager, device_id, steps)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.delete("/{device_id}/wake-test")
+def cancel_wake_test(device_id: str):
+    from .. import waketest
+    return waketest.cancel(device_id) or {"status": "none"}
+
+
 @router.post("/{device_id}/prepare")
 def prepare_queue(device_id: str, days: int = 7, s: Session = Depends(get_session)):
     """Put every item scheduled in the next `days` days into the phone's queue album now."""

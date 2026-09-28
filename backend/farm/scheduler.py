@@ -122,6 +122,10 @@ class Runner:
             asyncio.create_task(asyncio.to_thread(self._prepare_device, did), name=f"prepare-{did}")
         for did in wake:
             self._spawn_worker(did)
+        from . import waketest
+        for did in waketest.due(now):
+            if did not in self.busy:
+                asyncio.create_task(asyncio.to_thread(waketest.run_step, self.manager, did), name=f"waketest-{did}")
 
     @staticmethod
     def _prepare_window(device: Device, now: datetime) -> bool:

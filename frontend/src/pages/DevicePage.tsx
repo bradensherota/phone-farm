@@ -29,6 +29,7 @@ export default function DevicePage() {
             <button className={tab === "roll" ? "active" : ""} onClick={() => setTab("roll")}>Camera roll ({device.media_count})</button>
             <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Schedule</button>
           </div>
+          {device.kind === "ios" && <WakeTestCard device={device} />}
           {tab === "accounts" && <AccountsTab device={device} onChanged={reload} />}
           {tab === "roll" && <RollTab device={device} onChanged={reload} />}
           {tab === "schedule" && <ScheduleTab device={device} />}
@@ -115,6 +116,70 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         </div>
         <div className="field"><label>&nbsp;</label><button className="btn" disabled={!dirty} onClick={save}>Save</button></div>
         <div className="field"><label>&nbsp;</label><button className={`btn ${device.paused ? "primary" : ""}`} onClick={togglePause}>{device.paused ? "Resume phone" : "Pause phone"}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function WakeTestCard({ device }: { device: Device }) {
+  const toast = useToast();
+  const { data: t, reload } = usePoll(() => api.wakeTest(device.id), 10000, [device.id]);
+  const [steps, setSteps] = useState("15, 30, 60, 180");
+  if (!t) return null;
+  const parsed = steps.split(/[,\s]+/).map((x) => parseInt(x, 10)).filter((n) => n > 0);
+  const start = async () => {
+    if (!confirm(`Lock ${device.name} now, then wake and re-lock it after ${parsed.join(", ")} minutes? Nothing is posted.`)) return;
+    try { await api.startWakeTest(device.id, parsed); toast("Wake test started; phone locked"); reload(); } catch (e: any) { toast(e.message, "err"); }
+  };
+  const cancel = async () => { await api.cancelWakeTest(device.id); toast("Wake test stopped"); reload(); };
+  const fmt = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const running = t.status === "running";
+  // planned times per step, from the recorded events or the next_at for the upcoming one
+  const eventsFor = (step: number) => t.events.filter((e) => e.step === step && (e.phase === "wake" || e.phase === "sleep"));
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div className="card-head">
+        <strong>Wake test</strong>
+        <span className="small dim grow">Locks the phone, then wakes and re-locks it after each interval. Shows whether the runner survives long stretches locked.</span>
+        {running ? <Pill kind="running">running · next {t.next_at ? fmt(t.next_at) : ""}</Pill> : t.status === "done" ? <Pill kind="done">finished</Pill> : t.status === "cancelled" ? <Pill kind="cancelled">stopped</Pill> : null}
+      </div>
+      <div className="card-body">
+        {!running && (
+          <div className="row" style={{ marginBottom: t.events.length ? 12 : 0 }}>
+            <span className="small dim">Minutes between wakes</span>
+            <input className="input" style={{ width: 160 }} value={steps} onChange={(e) => setSteps(e.target.value)} />
+            <button className="btn sm primary" disabled={!device.connected || !parsed.length} onClick={start}>Start test</button>
+          </div>
+        )}
+        {(running || t.events.length > 0) && (
+          <table className="table">
+            <thead><tr><th style={{ width: 60 }}>Step</th><th style={{ width: 110 }}>After</th><th style={{ width: 90 }}>Time</th><th>Result</th></tr></thead>
+            <tbody>
+              {t.events.filter((e) => e.phase === "start").map((e, i) => (
+                <tr key={"s" + i}><td>—</td><td>start</td><td>{fmt(e.at)}</td><td><span className={e.ok ? "" : "danger"} style={{ color: e.ok ? "var(--green)" : "var(--red)" }}>{e.ok ? "✓" : "✗"}</span> {e.detail}</td></tr>
+              ))}
+              {t.steps.map((m, i) => {
+                const evs = eventsFor(i + 1);
+                const upcoming = running && i === t.index;
+                return (
+                  <tr key={i} style={{ opacity: !evs.length && !upcoming ? 0.5 : 1 }}>
+                    <td>{i + 1}</td>
+                    <td>{m} min locked</td>
+                    <td>{evs.length ? fmt(evs[0].at) : upcoming && t.next_at ? fmt(t.next_at) : "—"}</td>
+                    <td>
+                      {evs.length === 0 && (upcoming ? <span className="dim">waiting…</span> : <span className="dim">not yet</span>)}
+                      {evs.map((e, j) => <div key={j}><span style={{ color: e.ok ? "var(--green)" : "var(--red)" }}>{e.ok ? "✓" : "✗"}</span> <span className="dim small">{e.phase}:</span> {e.detail}</div>)}
+                    </td>
+                  </tr>
+                );
+              })}
+              {t.events.filter((e) => e.phase === "done" || e.phase === "cancel").map((e, i) => (
+                <tr key={"d" + i}><td>—</td><td>{e.phase === "done" ? "end" : "stopped"}</td><td>{fmt(e.at)}</td><td>{e.detail}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {running && <div className="row" style={{ marginTop: 10 }}><button className="btn sm ghost danger" onClick={cancel}>Stop test</button><span className="small dim">The phone stays locked. Scheduled posts still run at their time.</span></div>}
       </div>
     </div>
   );

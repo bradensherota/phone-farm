@@ -75,6 +75,8 @@ class DeviceOut(ORM):
     paused: bool
     sort_order: int
     story_album: str = "Stories"
+    queue_album: str = "Farm Queue"
+    prepare_lead_min: int = 60
     connected: bool = False
     connecting: bool = False
     error: str = ""
@@ -93,6 +95,8 @@ class DevicePatch(BaseModel):
     paused: bool | None = None
     sort_order: int | None = None
     story_album: str | None = None
+    queue_album: str | None = None
+    prepare_lead_min: int | None = None
 
 
 # ---- jobs ------------------------------------------------------------------

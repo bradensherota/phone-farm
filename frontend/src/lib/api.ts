@@ -39,6 +39,8 @@ export interface Device {
   paused: boolean;
   sort_order: number;
   story_album: string;
+  queue_album: string;
+  prepare_lead_min: number;
   connected: boolean;
   connecting: boolean;
   error: string;
@@ -151,6 +153,8 @@ export const api = {
   syncDevice: (id: string) => req<Media[]>(`/devices/${id}/sync`, { method: "POST" }),
   discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),
   connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
+  prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
+  clearQueue: (id: string) => req<{ cleared: boolean }>(`/devices/${id}/queue/clear`, { method: "POST" }),
   deleteDevice: (id: string) => req<{ ok: true }>(`/devices/${id}`, { method: "DELETE" }),
   media: (deviceId: string) => req<Media[]>(`/devices/${deviceId}/media`),
 

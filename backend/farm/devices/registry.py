@@ -50,6 +50,12 @@ class DeviceManager:
         self._connecting: set[str] = set()
         self.last_error: dict[str, str] = {}
         self.busy_provider = lambda: set()  # set by state.py to the runner's busy set
+        self._op_locks: dict[str, threading.Lock] = {}
+
+    def op_lock(self, device_id: str) -> threading.Lock:
+        """One phone does one thing at a time: a post, a queue prepare, or a queue release."""
+        with self._lock:
+            return self._op_locks.setdefault(device_id, threading.Lock())
 
     def busy_devices(self) -> set[str]:
         try:

@@ -75,6 +75,8 @@ class Device(Base):
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it
+    queue_album: Mapped[str] = mapped_column(String, default="Farm Queue")  # album the app fills with scheduled items and empties after posting
+    prepare_lead_min: Mapped[int] = mapped_column(Integer, default=60)  # fill the queue album this many minutes before the routine
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     accounts: Mapped[list[Account]] = relationship(

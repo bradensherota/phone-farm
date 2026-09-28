@@ -69,6 +69,51 @@ def connect_device(device_id: str, s: Session = Depends(get_session)):
     return device_out(s, d)
 
 
+@router.post("/{device_id}/prepare")
+def prepare_queue(device_id: str, days: int = 7, s: Session = Depends(get_session)):
+    """Put every item scheduled in the next `days` days into the phone's queue album now."""
+    from .. import queue as queue_mod
+    if s.get(Device, device_id) is None:
+        raise HTTPException(404, "device not found")
+    lock = manager.op_lock(device_id)
+    if not lock.acquire(timeout=2):
+        raise HTTPException(409, "phone is busy (posting or preparing)")
+    try:
+        return queue_mod.prepare(manager, device_id, days)
+    finally:
+        lock.release()
+
+
+@router.post("/{device_id}/queue/release")
+def release_queue_item(device_id: str, media_id: int, s: Session = Depends(get_session)):
+    """Take one item out of the queue album (manual cleanup)."""
+    from .. import queue as queue_mod
+    if s.get(Device, device_id) is None:
+        raise HTTPException(404, "device not found")
+    lock = manager.op_lock(device_id)
+    if not lock.acquire(timeout=2):
+        raise HTTPException(409, "phone is busy (posting or preparing)")
+    try:
+        return {"removed": queue_mod.release(manager, device_id, media_id)}
+    finally:
+        lock.release()
+
+
+@router.post("/{device_id}/queue/clear")
+def clear_queue(device_id: str, s: Session = Depends(get_session)):
+    """Empty the queue album on the phone (Select All, Remove from Album). Media is never deleted."""
+    from .. import queue as queue_mod
+    if s.get(Device, device_id) is None:
+        raise HTTPException(404, "device not found")
+    lock = manager.op_lock(device_id)
+    if not lock.acquire(timeout=2):
+        raise HTTPException(409, "phone is busy (posting or preparing)")
+    try:
+        return {"cleared": queue_mod.clear(manager, device_id)}
+    finally:
+        lock.release()
+
+
 @router.delete("/{device_id}")
 def delete_device(device_id: str, s: Session = Depends(get_session)):
     d = s.get(Device, device_id)

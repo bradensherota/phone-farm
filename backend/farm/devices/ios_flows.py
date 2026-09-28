@@ -34,6 +34,7 @@ class Phone:
     """Thin convenience wrapper around a facebook-wda client for one phone."""
 
     def __init__(self, base_url: str, log: LogFn):
+        self.base = base_url
         self.c = wda.Client(base_url)
         self.c.timeout = 60
         self.log = log

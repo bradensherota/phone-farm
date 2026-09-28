@@ -41,6 +41,8 @@ _ADDED_COLUMNS = [
     ("media", "added_at", "DATETIME"),
     ("media", "albums", "VARCHAR NOT NULL DEFAULT ''"),
     ("devices", "story_album", "VARCHAR NOT NULL DEFAULT 'Stories'"),
+    ("devices", "queue_album", "VARCHAR NOT NULL DEFAULT 'Farm Queue'"),
+    ("devices", "prepare_lead_min", "INTEGER NOT NULL DEFAULT 60"),
 ]
 
 

@@ -75,6 +75,18 @@ class Driver(ABC):
     @abstractmethod
     def run_action(self, spec: ActionSpec, log: LogFn) -> ActionResult: ...
 
+    def add_to_album(self, items: list, album: str, log: LogFn) -> list:
+        """Optional: put library items into a Photos album on the phone. Returns the items added."""
+        return []
+
+    def remove_from_album(self, item, album: str, log: LogFn) -> bool:
+        """Optional: take one item out of a Photos album (never deletes the media)."""
+        return False
+
+    def clear_album(self, album: str, log: LogFn) -> bool:
+        """Optional: take every item out of a Photos album (never deletes the media)."""
+        return False
+
     def media_meta(self, filename: str) -> dict | None:
         """Optional: {'duration_s': float, 'captured_at': datetime} read from the file itself.
         Real phones sort their gallery by capture date, which can differ from the file's timestamps."""

@@ -41,9 +41,9 @@ export default function DevicePage() {
 function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
   const nav = useNavigate();
-  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album });
-  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album]);
-  const dirty = form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s || form.story_album !== device.story_album;
+  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min });
+  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.prepare_lead_min]);
+  const dirty = form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s || form.story_album !== device.story_album || form.queue_album !== device.queue_album || form.prepare_lead_min !== device.prepare_lead_min;
   const save = async () => {
     try { await api.patchDevice(device.id, form); toast("Saved"); onChanged(); } catch (e: any) { toast(e.message, "err"); }
   };
@@ -51,6 +51,21 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
     await api.patchDevice(device.id, { paused: !device.paused });
     toast(device.paused ? "Phone resumed" : "Phone paused. Its queue will wait.");
     onChanged();
+  };
+  const [preparing, setPreparing] = useState(false);
+  const prepare = async () => {
+    setPreparing(true);
+    try { const r = await api.prepareDevice(device.id); toast(r.message); onChanged(); }
+    catch (e: any) { toast(e.message, "err"); }
+    finally { setPreparing(false); }
+  };
+  const [clearing, setClearing] = useState(false);
+  const clearQueue = async () => {
+    if (!confirm(`Empty the "${device.queue_album}" album on ${device.name}? Media stays in the library.`)) return;
+    setClearing(true);
+    try { const r = await api.clearQueue(device.id); toast(r.cleared ? "Queue album emptied" : "Could not empty the album", r.cleared ? "ok" : "err"); onChanged(); }
+    catch (e: any) { toast(e.message, "err"); }
+    finally { setClearing(false); }
   };
   const reconnect = async () => {
     await api.connectDevice(device.id);
@@ -78,6 +93,9 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
           <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button></div>
         )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
+        <div className="field"><label>Queue album</label><div className="row"><input className="input" style={{ width: 120 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Album the app fills with scheduled items and empties after posting" /><input className="input" type="number" style={{ width: 70 }} value={form.prepare_lead_min} onChange={(e) => setForm({ ...form, prepare_lead_min: +e.target.value })} title="Minutes before the routine to fill it" /><span className="dim small">min before</span></div></div>
+        <div className="field"><label>&nbsp;</label><button className="btn" disabled={preparing || device.kind === "sim"} onClick={prepare}>{preparing ? "Preparing…" : "Prepare album now"}</button></div>
+        <div className="field"><label>&nbsp;</label><button className="btn ghost" disabled={clearing || device.kind === "sim"} onClick={clearQueue}>{clearing ? "Emptying…" : "Empty queue album"}</button></div>
         <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>
         <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>
         <div className="field"><label>Gap between actions (s)</label>

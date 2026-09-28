@@ -321,6 +321,43 @@ class IOSDriver(Driver):
         self._meta_cache[filename] = meta
         return meta
 
+    # ---- Photos albums (queue) ------------------------------------------
+    def add_to_album(self, items: list, album: str, log_fn: LogFn) -> list:
+        from . import ios_flows, ios_photos
+        self.wake()
+        phone = ios_flows.Phone(self.base, log_fn)
+        try:
+            return ios_photos.photos_add_to_album(phone, items, album)
+        finally:
+            try:
+                phone.home()
+            except Exception:
+                pass
+
+    def remove_from_album(self, item, album: str, log_fn: LogFn) -> bool:
+        from . import ios_flows, ios_photos
+        self.wake()
+        phone = ios_flows.Phone(self.base, log_fn)
+        try:
+            return ios_photos.photos_remove_from_album(phone, item, album)
+        finally:
+            try:
+                phone.home()
+            except Exception:
+                pass
+
+    def clear_album(self, album: str, log_fn: LogFn) -> bool:
+        from . import ios_flows, ios_photos
+        self.wake()
+        phone = ios_flows.Phone(self.base, log_fn)
+        try:
+            return ios_photos.photos_clear_album(phone, album)
+        finally:
+            try:
+                phone.home()
+            except Exception:
+                pass
+
     # ---- actions ---------------------------------------------------------
     def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:
         from . import ios_flows

@@ -69,6 +69,7 @@ class Runner:
         self._task: asyncio.Task | None = None
         self._workers: dict[str, asyncio.Task] = {}
         self._stopping = False
+        self._prepared_on: dict[str, object] = {}
 
     # ---- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -103,8 +104,36 @@ class Runner:
         with session_scope() as s:
             devices = s.query(Device).filter(Device.paused.is_(False)).all()
             wake = [d.id for d in devices if d.id not in self.busy and due_jobs(s, d, now)]
+            prep = [
+                d.id for d in devices
+                if d.id not in self.busy and d.kind != "sim" and self._prepare_window(d, now)
+                and self._prepared_on.get(d.id) != now.date()
+            ]
+        for did in prep:
+            self._prepared_on[did] = now.date()
+            asyncio.create_task(asyncio.to_thread(self._prepare_device, did), name=f"prepare-{did}")
         for did in wake:
             self._spawn_worker(did)
+
+    @staticmethod
+    def _prepare_window(device: Device, now: datetime) -> bool:
+        """True from `prepare_lead_min` minutes before the routine until the routine starts."""
+        routine = datetime.combine(now.date(), _parse_hhmm(device.routine_start))
+        lead = timedelta(minutes=max(1, device.prepare_lead_min or 60))
+        return routine - lead <= now < routine
+
+    def _prepare_device(self, device_id: str) -> None:
+        from . import queue as queue_mod
+        lock = self.manager.op_lock(device_id)
+        if not lock.acquire(timeout=1):
+            return
+        try:
+            res = queue_mod.prepare(self.manager, device_id)
+            log.info("%s: queue prepare: %s", device_id, res.get("message"))
+        except Exception:
+            log.exception("queue prepare failed for %s", device_id)
+        finally:
+            lock.release()
 
     def _spawn_worker(self, device_id: str) -> None:
         if device_id in self.busy:
@@ -153,8 +182,14 @@ class Runner:
 
     # ---- one job ---------------------------------------------------------
     def _execute(self, device_id: str, job_id: int) -> None:
+        lock = self.manager.op_lock(device_id)
+        with lock:
+            self._execute_locked(device_id, job_id)
+
+    def _execute_locked(self, device_id: str, job_id: int) -> None:
         drv = self.manager.driver(device_id)
         self.current[device_id] = job_id
+        self._ensure_queued(device_id, job_id)
 
         def jlog(level: str, message: str) -> None:
             with session_scope() as s:
@@ -172,11 +207,13 @@ class Runner:
             media: MediaItem | None = job.media
             device: Device = s.get(Device, device_id)
             album, album_index = None, None
-            if media is not None and device is not None and device.story_album:
+            if media is not None and device is not None:
                 titles = [t for t in (media.albums or "").split("|") if t]
-                if device.story_album.strip() in titles:
-                    album = device.story_album.strip()
-                    album_index = _album_index(s, device_id, album, media)
+                for cand in ((device.queue_album or "").strip(), (device.story_album or "").strip()):
+                    if cand and cand in titles:
+                        album = cand
+                        album_index = _album_index(s, device_id, album, media)
+                        break
             spec = ActionSpec(
                 action=job.action.value,
                 platform=account.platform.value,
@@ -224,6 +261,49 @@ class Runner:
             self._finish(job_id, ok=False, message=f"Driver error: {e}", shot=shot, attempt=attempt)
             return
         self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt)
+        if result.ok:
+            self._release_after_post(device_id, job_id)
+
+    def _ensure_queued(self, device_id: str, job_id: int) -> None:
+        """Safety net: if this job's media isn't in the queue album yet, add it now."""
+        from . import queue as queue_mod
+        with session_scope() as s:
+            job = s.query(Job).options(selectinload(Job.media)).get(job_id)
+            dev = s.get(Device, device_id)
+            if job is None or dev is None or job.media is None or not dev.queue_album or dev.kind == "sim":
+                return
+            album = dev.queue_album.strip()
+            titles = [t for t in (job.media.albums or "").split("|") if t]
+            if album in titles:
+                return
+            item = queue_mod._qitem(job.media)
+        drv = self.manager.driver(device_id)
+        if drv is None or not drv.is_connected():
+            return
+        jl = queue_mod.job_log(job_id)
+        jl("info", f"Media not in '{album}' yet; adding it first")
+        try:
+            added = drv.add_to_album([item], album, jl)
+        except Exception as e:
+            jl("warn", f"Could not add to '{album}': {e}. Falling back to Recents.")
+            return
+        if added:
+            with session_scope() as s:
+                m = s.get(MediaItem, item.media_id)
+                if m is not None:
+                    m.albums = "|".join([t for t in (m.albums or "").split("|") if t] + [album])
+
+    def _release_after_post(self, device_id: str, job_id: int) -> None:
+        from . import queue as queue_mod
+        with session_scope() as s:
+            job = s.get(Job, job_id)
+            media_id = job.media_id if job else None
+        if media_id is None:
+            return
+        try:
+            queue_mod.release(self.manager, device_id, media_id, queue_mod.job_log(job_id))
+        except Exception:
+            log.exception("queue release failed")
 
     def _finish(self, job_id: int, ok: bool, message: str, shot: bytes | None, attempt: int) -> None:
         max_attempts = int(settings_mod.get("max_attempts", "2") or 2)

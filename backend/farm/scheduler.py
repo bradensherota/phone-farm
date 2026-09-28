@@ -21,7 +21,7 @@ from .config import SHOT_DIR
 from .db import session_scope
 from .devices.base import ActionSpec
 from .devices.registry import DeviceManager
-from .models import Account, Device, Job, JobLog, JobStatus, MediaItem
+from .models import Account, DaySchedule, Device, Job, JobLog, JobStatus, MediaItem
 
 log = logging.getLogger("farm.runner")
 
@@ -36,9 +36,15 @@ def _parse_hhmm(v: str) -> dtime:
         return dtime(7, 0)
 
 
+def day_start(s: Session, device: Device, day: date) -> datetime:
+    """When this phone's queue starts on `day`: the planner's per-day time, else the routine."""
+    row = s.query(DaySchedule).filter_by(device_id=device.id, run_date=day).first()
+    return datetime.combine(day, _parse_hhmm(row.start if row and row.start else device.routine_start))
+
+
 def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
     today = now.date()
-    routine = datetime.combine(today, _parse_hhmm(device.routine_start))
+    routine = day_start(s, device, today)
     q = (
         s.query(Job)
         .options(selectinload(Job.account), selectinload(Job.media))
@@ -55,9 +61,11 @@ def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
     return q.all()
 
 
-def next_run_for(job: Job, device: Device) -> datetime:
+def next_run_for(job: Job, device: Device, s: Session | None = None) -> datetime:
     if job.run_at:
         return job.run_at
+    if s is not None:
+        return day_start(s, device, job.run_date)
     return datetime.combine(job.run_date, _parse_hhmm(device.routine_start))
 
 
@@ -118,7 +126,8 @@ class Runner:
     @staticmethod
     def _prepare_window(device: Device, now: datetime) -> bool:
         """True from `prepare_lead_min` minutes before the routine until the routine starts."""
-        routine = datetime.combine(now.date(), _parse_hhmm(device.routine_start))
+        with session_scope() as s2:
+            routine = day_start(s2, s2.get(Device, device.id) or device, now.date())
         lead = timedelta(minutes=max(1, device.prepare_lead_min or 60))
         return routine - lead <= now < routine
 

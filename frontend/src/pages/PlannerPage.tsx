@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Account, Device, Job } from "../lib/api";
-import { actionMeta, addDays, api, startOfWeek, thumbUrl, ymd } from "../lib/api";
+import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, TIME_SLOTS, ymd } from "../lib/api";
+import type { DayStart } from "../lib/api";
 import { Pill, PlatformIcon, StatusDot, usePoll } from "../components/common";
 import PlanDrawer from "../components/PlanDrawer";
 
@@ -13,6 +14,9 @@ export default function PlannerPage() {
 
   const { data: devices } = usePoll(api.devices, 5000);
   const { data: jobs, reload } = usePoll(() => api.jobs({ start, end }), 4000, [start, end]);
+  const { data: starts, reload: reloadStarts } = usePoll(() => scheduleApi.get(start, end), 10000, [start, end]);
+  const startFor = (deviceId: string, day: string) => (starts || []).find((x: DayStart) => x.device_id === deviceId && x.run_date === day)?.start || "";
+  const setStart = async (deviceId: string, day: string, value: string) => { await scheduleApi.put(deviceId, day, value); reloadStarts(); };
   const [sel, setSel] = useState<{ account: Account; device: Device; date: string } | null>(null);
 
   const byCell = useMemo(() => {
@@ -57,7 +61,7 @@ export default function PlannerPage() {
           </thead>
           <tbody>
             {(devices || []).map((dev) => (
-              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} />
+              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} />
             ))}
           </tbody>
         </table>
@@ -78,19 +82,33 @@ export default function PlannerPage() {
   );
 }
 
-function DeviceRows({ device, days, today, byCell, onPick }: {
+function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart }: {
   device: Device; days: Date[]; today: string; byCell: Map<string, Job[]>;
   onPick: (a: Account, date: string) => void;
+  startFor: (deviceId: string, day: string) => string;
+  setStart: (deviceId: string, day: string, value: string) => Promise<void>;
 }) {
   const accounts = device.accounts.filter((a) => a.status !== "banned");
   return (
     <>
       <tr className="dev-row">
-        <td colSpan={8}>
+        <td>
           <span className="row"><StatusDot connected={device.connected} busy={device.busy} /> {device.name}
-            <span className="meta">routine {device.routine_start}{device.paused ? " · paused" : ""}</span>
+            <span className="meta">{device.paused ? "paused" : `default ${fmtHHMM(device.routine_start)}`}</span>
           </span>
         </td>
+        {days.map((d) => {
+          const k = ymd(d);
+          const v = startFor(device.id, k);
+          return (
+            <td key={k} className="start-cell">
+              <select className={`start-select ${v ? "set" : ""}`} value={v} title="When this phone's queue starts on this day. Jobs run down the column, one account after another." onChange={(e) => setStart(device.id, k, e.target.value)}>
+                <option value="">{fmtHHMM(device.routine_start)} (default)</option>
+                {TIME_SLOTS.map(([hhmm, label]) => <option key={hhmm} value={hhmm}>{label}</option>)}
+              </select>
+            </td>
+          );
+        })}
       </tr>
       {accounts.map((a) => (
         <tr key={a.id}>

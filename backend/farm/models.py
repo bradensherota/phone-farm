@@ -170,6 +170,18 @@ class JobLog(Base):
     job: Mapped[Job] = relationship(back_populates="logs")
 
 
+class DaySchedule(Base):
+    """Per phone, per day: when that day's queue starts (overrides the phone's routine_start)."""
+
+    __tablename__ = "day_schedules"
+    __table_args__ = (UniqueConstraint("device_id", "run_date", name="uq_day_schedule"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    run_date: Mapped[date] = mapped_column(Date, index=True)
+    start: Mapped[str] = mapped_column(String)  # HH:MM local
+
+
 class Setting(Base):
     __tablename__ = "settings"
 

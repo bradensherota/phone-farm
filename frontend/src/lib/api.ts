@@ -184,6 +184,20 @@ export const api = {
   runner: () => req<{ enabled: boolean; busy_devices: string[]; current: Record<string, number> }>("/runner"),
 };
 
+export interface DayStart { device_id: string; run_date: string; start: string }
+export const scheduleApi = {
+  get: (start: string, end: string) => req<DayStart[]>(`/schedule?start=${start}&end=${end}`),
+  put: (device_id: string, run_date: string, start: string) => req<{ ok: true }>("/schedule", { method: "PUT", body: JSON.stringify({ device_id, run_date, start }) }),
+};
+/** 15-minute slots as HH:MM with 12-hour labels, e.g. ["07:00", "7:00 AM"] */
+export const TIME_SLOTS: [string, string][] = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4), m = (i % 4) * 15;
+  const hh = String(h).padStart(2, "0"), mm = String(m).padStart(2, "0");
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return [`${hh}:${mm}`, `${h12}:${mm} ${h < 12 ? "AM" : "PM"}`];
+});
+export const fmtHHMM = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+
 export const thumbUrl = (m: Media | null | undefined) => (m && m.has_thumb ? `/api/media/${m.id}/thumb.jpg` : "");
 export const screenUrl = (deviceId: string) => `/api/devices/${deviceId}/screen.png?t=${Date.now()}`;
 export const shotUrl = (jobId: number) => `/api/jobs/${jobId}/screenshot.png?t=${Date.now()}`;

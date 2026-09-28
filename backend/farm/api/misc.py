@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from .. import settings as settings_mod
 from ..db import get_session
-from ..models import ACTIONS, MediaItem
+from ..models import ACTIONS, DaySchedule, Device, MediaItem
+from datetime import date
 from ..schemas import RunnerState
 from ..state import runner
 
@@ -48,3 +49,28 @@ def actions():
         {"action": a.value, "platform": m["platform"].value, "label": m["label"], "media": m["media"], "link": m["link"], "rank": m["rank"]}
         for a, m in ACTIONS.items()
     ]
+
+
+@router.get("/schedule")
+def get_schedule(start: date, end: date, s: Session = Depends(get_session)):
+    rows = s.query(DaySchedule).filter(DaySchedule.run_date >= start, DaySchedule.run_date <= end).all()
+    return [{"device_id": r.device_id, "run_date": r.run_date.isoformat(), "start": r.start} for r in rows]
+
+
+@router.put("/schedule")
+def put_schedule(body: dict, s: Session = Depends(get_session)):
+    """{device_id, run_date, start}: start 'HH:MM' sets that day's queue start; '' clears it."""
+    device_id, run_date, start = body.get("device_id"), date.fromisoformat(body["run_date"]), (body.get("start") or "").strip()
+    if s.get(Device, device_id) is None:
+        raise HTTPException(404, "device not found")
+    row = s.query(DaySchedule).filter_by(device_id=device_id, run_date=run_date).first()
+    if not start:
+        if row:
+            s.delete(row)
+    else:
+        if row is None:
+            row = DaySchedule(device_id=device_id, run_date=run_date, start=start)
+            s.add(row)
+        row.start = start
+    s.commit()
+    return {"ok": True}

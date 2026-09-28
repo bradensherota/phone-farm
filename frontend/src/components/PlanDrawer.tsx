@@ -147,13 +147,6 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                         </div>
                       </>
                     )}
-                    <div className="field">
-                      <label>Time <span className="dim">(blank = {device.name}'s morning routine at {device.routine_start})</span></label>
-                      <div className="row">
-                        <input className="input" type="datetime-local" disabled={locked} value={d.run_at} onChange={(e) => upd(a.action, { run_at: e.target.value })} />
-                        {d.run_at && <button className="btn sm ghost" onClick={() => upd(a.action, { run_at: "" })}>clear</button>}
-                      </div>
-                    </div>
                     {d.job?.last_error && <div className="small" style={{ color: "var(--red)" }}>{d.job.last_error}</div>}
                     {d.job?.finished_at && <div className="small dim">Finished {fmtDateTime(d.job.finished_at)}</div>}
                   </div>
@@ -163,7 +156,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
           })}
         </div>
         <div className="drawer-foot">
-          <span className="small dim grow">Actions run in order: {actions.map((a) => a.label).join(" → ")}, after the phone's earlier accounts.</span>
+          <span className="small dim grow">Runs in the phone's queue for that day, starting at the time set above the column: {actions.map((a) => a.label).join(" → ")}, after earlier accounts.</span>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
         </div>

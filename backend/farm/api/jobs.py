@@ -18,7 +18,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 _LOAD = (selectinload(Job.account).selectinload(Account.device), selectinload(Job.media))
 
 
-def job_out(j: Job) -> JobOut:
+def job_out(j: Job, s: Session | None = None) -> JobOut:
     out = JobOut.model_validate(j)
     if j.media is not None:
         out.media = MediaOut.model_validate(j.media)
@@ -27,7 +27,7 @@ def job_out(j: Job) -> JobOut:
     out.handle = j.account.handle
     out.platform = j.account.platform.value
     out.device_name = j.account.device.name if j.account.device else ""
-    out.next_run = next_run_for(j, j.account.device) if j.status == JobStatus.scheduled else None
+    out.next_run = next_run_for(j, j.account.device, s) if j.status == JobStatus.scheduled else None
     return out
 
 
@@ -50,7 +50,7 @@ def list_jobs(
     if status:
         q = q.filter(Job.status == JobStatus(status))
     rows = q.order_by(Job.run_date, Job.device_id, Job.sort_order, Job.id).limit(limit).all()
-    return [job_out(j) for j in rows]
+    return [job_out(j, s) for j in rows]
 
 
 @router.get("/activity", response_model=list[JobOut])
@@ -62,7 +62,7 @@ def activity(limit: int = Query(100, le=1000), s: Session = Depends(get_session)
         .limit(limit)
         .all()
     )
-    return [job_out(j) for j in rows]
+    return [job_out(j, s) for j in rows]
 
 
 @router.post("", response_model=list[JobOut])

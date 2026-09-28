@@ -322,11 +322,31 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
     return True, "TikTok post shared"
 
 
+def tt_open_story_gallery(bp: BlindPhone) -> None:
+    """Get TikTok to the 'Add to Story' gallery. Entry taps to be confirmed on-device."""
+    W, H = bp.pt_w, bp.pt_h
+    bp.launch_from_home("TikTok")
+    for _ in range(6):
+        words = bp.read()
+        if bp.find(r"^Add to Story$", words):
+            return
+        if bp.find(r"^(Home|Inbox|Friends|Profile)$", words, region=(0, H - 90, W, H)):
+            break
+        if tt_dismiss_prompt(bp, words):
+            continue
+        bp.tap(35, 90, "close (X)", pause=2.0)
+    raise FlowError("Story entry not mapped yet: how do you reach 'Add to Story'?")
+
+
 def run_blind(driver, spec: ActionSpec, log: LogFn):
     from .base import ActionResult
     bp = BlindPhone(driver.base, log)
     try:
-        ok, message = tt_post_blind(bp, spec)
+        if spec.action == "tt_story":
+            from .ios_blind_story import tt_story_blind
+            ok, message = tt_story_blind(bp, spec, tt_open_story_gallery)
+        else:
+            ok, message = tt_post_blind(bp, spec)
     except FlowError as e:
         ok, message = False, str(e)
     shot = None

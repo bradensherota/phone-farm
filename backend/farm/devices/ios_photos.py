@@ -46,7 +46,7 @@ class QueueItem:
     @property
     def day_query(self) -> str:  # what to type into Photos search: the day, narrowed to videos/photos
         day = self.created_at.strftime("%B %-d, %Y")
-        return f"videos {day}" if self.kind == "video" else f"photos {day}"
+        return f"{day} videos" if self.kind == "video" else f"{day} photos"
 
     @property
     def cell_predicate(self) -> str:  # finds this exact item in the grid without a full tree dump
@@ -96,6 +96,18 @@ def _grid_cells(p: Phone) -> list[tuple[str, dict]]:
 def _tap_rect(p: Phone, r: dict) -> None:
     p.s.tap(int(r["x"] + r["width"] / 2), int(r["y"] + r["height"] / 2))
     time.sleep(0.8)
+
+
+def _press_search_key(p: Phone) -> None:
+    """Press the keyboard's blue search key so Photos applies the typed filter (not just the
+    suggestion list)."""
+    if p.tap_if(label="search", what="search key", timeout=3, pause=1.5):
+        return
+    if p.tap_if(name="Search", what="search key", timeout=1.5, pause=1.5):
+        return
+    p.log("info", "Press return to search")
+    p.s.send_keys("\n")
+    time.sleep(1.5)
 
 
 def _caption(p: Phone) -> str:
@@ -163,8 +175,8 @@ def photos_add_to_album(p: Phone, items: list[QueueItem], album: str) -> list[Qu
         p.log("info", f"Photos: search '{day}' for {len(group)} item(s)")
         p.tap(name="SearchTab", what="Search tab")
         p.type(day, "search")
-        p.tap(label="search", what="search key", timeout=5)
-        if not p.exists(predicate="label BEGINSWITH 'Photos ('", timeout=6):
+        _press_search_key(p)
+        if not p.exists(predicate="label BEGINSWITH 'Photos (' OR label ENDSWITH 'Results' OR label ENDSWITH 'Result'", timeout=8):
             p.log("warn", f"No results for '{day}'")
             photos_reset(p)
             continue

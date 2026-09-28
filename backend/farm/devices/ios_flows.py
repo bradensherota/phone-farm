@@ -61,6 +61,13 @@ class Phone:
         self.apply_settings()
         time.sleep(2.5)
 
+    def attach(self) -> None:
+        """Attach to whatever is on screen without launching anything (a stage run on its own)."""
+        self.log("info", "Attach to the app on screen")
+        self.s = self.c.session()
+        self.apply_settings()
+        time.sleep(0.8)
+
     def home(self) -> None:
         try:
             self.c.home()
@@ -646,9 +653,7 @@ def ig_story(p: Phone, spec: ActionSpec):
 
     def pick():
         if not p.exists(name="gallery-header-title", timeout=1):
-            p.tap(name="mainfeed-tab", what="Home tab")
-            p.tap(name="story-tray-add-button", what="Add to your story")
-            p.wait(name="gallery-header-title", what="story gallery")
+            ig_open_story_gallery(p)
         ig_pick_gallery_item(p, spec)
         if p.tap_if(name="story-trimmer-done-button", what="Trim: Done", timeout=4):
             pass
@@ -671,6 +676,27 @@ def ig_story(p: Phone, spec: ActionSpec):
         return True, "Story shared"
 
     return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
+
+
+def ig_open_story_gallery(p: Phone) -> None:
+    """Open the 'Add to story' gallery the way Braden does: Profile tab, then the black + badge
+    on the profile picture. Falls back to the Home tab's story tray if the badge isn't there."""
+    p.tap(name="profile-tab", what="Profile tab")
+    badge = (p.el(name="Prism-Add-to-Story-Badge-20").wait(timeout=4, raise_error=False)
+             or p.el(predicate="label == 'Add to story' AND type == 'XCUIElementTypeImage'").wait(timeout=2, raise_error=False))
+    if badge:
+        r = badge.bounds
+        p.log("info", "Tap + on the profile picture (Add to story)")
+        p.s.tap(int(r.x + r.width / 2), int(r.y + r.height / 2))
+        time.sleep(2.0)
+        if not p.exists(name="gallery-header-title", timeout=4):
+            # some builds show a chooser first
+            p.tap_if(predicate="label == 'Story' OR label == 'Add to story'", what="Story option", timeout=3)
+    else:
+        p.log("warn", "No + badge on the profile picture; using the Home story tray")
+        p.tap(name="mainfeed-tab", what="Home tab")
+        p.tap(name="story-tray-add-button", what="Add to your story")
+    p.wait(name="gallery-header-title", what="story gallery", timeout=15)
 
 
 def ig_reel(p: Phone, spec: ActionSpec):
@@ -837,6 +863,10 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         return ActionResult(False, f"No flow for {spec.action}")
     partial = False
     try:
+        extra = spec.extra or {}
+        first = extra.get("stage_only") or extra.get("stage_from")
+        if first and first != "open":
+            phone.attach()  # the 'open' stage isn't running, so work with what's on screen
         r = fn(phone, spec)
         ok, message = r[0], r[1]
         partial = bool(r[2]) if len(r) > 2 else False

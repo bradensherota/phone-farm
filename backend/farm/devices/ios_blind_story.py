@@ -65,17 +65,36 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
         raise FlowError("TikTok stories need the item in the queue or story album")
     if not spec.link:
         raise FlowError("TikTok story needs a link")
+    from .ios_flows import run_stages
     W, H = bp.pt_w, bp.pt_h
-    open_gallery(bp)
-    bp.wait_for(r"^Add to Story$", timeout=20, what="Add to Story gallery")
-    # album
-    tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 0.35 * H), list_x=W * 0.25)
-    words = bp.read()
-    cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
-                           float(extra.get("duration_s") or 0) or None, spec.media_kind or "video", lead_tiles=1)
-    bp.tap(cx, cy, "planned item", pause=3.0)
+    state = {}
+
+    def open_():
+        open_gallery(bp)
+        bp.wait_for(r"^Add to Story$", timeout=20, what="Add to Story gallery")
+
+    def pick():
+        if not bp.find(r"^Add to Story$", bp.read()):
+            raise FlowError("Not on the 'Add to Story' gallery (run the 'open' stage first)")
+        tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 0.35 * H), list_x=W * 0.25)
+        words = bp.read()
+        cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
+                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video", lead_tiles=1)
+        bp.tap(cx, cy, "planned item", pause=3.0)
+        bp.wait_for(r"^Aa$", timeout=20, what="story editor")
+
+    def compose():
+        _story_compose(bp, spec, W, H)
+
+    def post():
+        return _story_post(bp, spec, extra, W, H)
+
+    return run_stages(bp.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
+
+
+def _story_compose(bp: BlindPhone, spec: ActionSpec, W: float, H: float) -> None:
     # editor: the right rail has "Aa" (text); the sticker button is the next icon below it
-    aa = bp.wait_for(r"^Aa$", timeout=20, what="story editor")
+    aa = bp.wait_for(r"^Aa$", timeout=5, what="story editor")
     pitch = max(44.0, aa.h * 3.2)
     opened = False
     for k in (1, 2):
@@ -132,7 +151,9 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
             break
         bp.log("info", f"Drag sticker ({st.cx:.0f},{st.cy:.0f}) → ({tx:.0f},{ty:.0f})")
         _drag(bp, st.cx, st.cy, tx, ty)
-    # share
+
+
+def _story_post(bp: BlindPhone, spec: ActionSpec, extra: dict, W: float, H: float):
     btn = bp.wait_for(r"^Your St", timeout=10, region=(0, H * 0.8, W, H), what="Your Story button")
     if extra.get("dry_run"):
         bp.log("info", f"DRY RUN: would tap Your Story at ({btn.cx:.0f},{btn.cy:.0f}); stopping here")

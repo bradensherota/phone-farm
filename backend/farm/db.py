@@ -45,6 +45,10 @@ _ADDED_COLUMNS = [
     ("devices", "prepare_lead_min", "INTEGER NOT NULL DEFAULT 60"),
     ("devices", "passcode", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "group_key", "VARCHAR NOT NULL DEFAULT ''"),
+    ("jobs", "last_stage", "VARCHAR NOT NULL DEFAULT ''"),
+    ("jobs", "failed_stage", "VARCHAR NOT NULL DEFAULT ''"),
+    ("jobs", "run_stage", "VARCHAR NOT NULL DEFAULT ''"),
+    ("jobs", "run_mode", "VARCHAR NOT NULL DEFAULT ''"),
 ]
 
 

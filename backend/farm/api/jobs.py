@@ -197,11 +197,37 @@ def run_now(job_id: int, s: Session = Depends(get_session)):
     j.status = JobStatus.scheduled
     j.attempts = 0
     j.last_error = ""
+    j.last_stage, j.failed_stage = "", ""
+    j.run_stage, j.run_mode = "", "restart"
     j.run_at = datetime.now()
     s.add(JobLog(job_id=j.id, level="info", message="Run now requested"))
     s.commit()
     s.refresh(j)
     runner.kick(j.device_id)
+    return job_out(j)
+
+
+@router.post("/{job_id}/run-stage", response_model=JobOut)
+def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(get_session)):
+    """Run one stage of this job now (`mode=only`), or this stage and everything after it
+    (`mode=from`). Works while the phone is paused, so a day can be stepped through by hand."""
+    from ..devices.ios_flows import STAGES
+    if stage not in STAGES or mode not in ("only", "from"):
+        raise HTTPException(400, f"stage must be one of {', '.join(STAGES)}; mode only|from")
+    j = s.query(Job).options(*_LOAD).get(job_id)
+    if j is None:
+        raise HTTPException(404, "job not found")
+    if j.status == JobStatus.running:
+        raise HTTPException(409, "already running")
+    j.run_stage, j.run_mode = stage, mode
+    j.last_error = ""
+    if j.status in (JobStatus.failed, JobStatus.cancelled, JobStatus.done):
+        j.status = JobStatus.scheduled
+    s.add(JobLog(job_id=j.id, level="info", message=f"Manual run: stage '{stage}' ({'only this stage' if mode == 'only' else 'and everything after'})"))
+    s.commit()
+    s.refresh(j)
+    if not runner.run_manual(j.device_id, j.id):
+        raise HTTPException(409, "phone is busy with another job")
     return job_out(j)
 
 

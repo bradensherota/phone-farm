@@ -147,6 +147,10 @@ class Job(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     screenshot_path: Mapped[str] = mapped_column(String, default="")
     group_key: Mapped[str] = mapped_column(String, default="")  # "allstories:<origin account id>:<date>" for fan-out stories
+    last_stage: Mapped[str] = mapped_column(String, default="")  # last stage that passed (open/pick/compose/post)
+    failed_stage: Mapped[str] = mapped_column(String, default="")  # stage that broke on the last attempt
+    run_stage: Mapped[str] = mapped_column(String, default="")  # manual request: which stage
+    run_mode: Mapped[str] = mapped_column(String, default="")  # manual request: only | from | restart
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

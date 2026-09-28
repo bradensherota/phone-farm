@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Job, JobLog } from "../lib/api";
-import { actionMeta, api, fmtDateTime, shotUrl } from "../lib/api";
+import type { Job, JobLog, Stage } from "../lib/api";
+import { STAGES, actionMeta, api, fmtDateTime, shotUrl } from "../lib/api";
 import { MediaThumb, Pill, PlatformIcon, useInterval, useToast } from "./common";
 
 interface Props {
@@ -51,6 +51,21 @@ export default function JobDetail({ job: initial, onClose, onChanged }: Props) {
               {job.media && <><span className="dim">Media</span><span className="row"><MediaThumb media={job.media} className="kv-thumb" /> {job.media.filename}</span></>}
               {meta.link && <><span className="dim">Link</span><span>{job.link_text ? `"${job.link_text}" → ` : ""}{job.link || <span className="dim">none</span>}</span></>}
               {job.caption && <><span className="dim">Caption</span><span style={{ whiteSpace: "pre-wrap", userSelect: "text" }}>{job.caption}</span></>}
+              <span className="dim">Stages</span>
+              <span className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                {STAGES.map((st) => {
+                  const li = job.last_stage ? STAGES.indexOf(job.last_stage) : -1;
+                  const done = job.status === "done" || STAGES.indexOf(st) <= li;
+                  const failed = job.failed_stage === st;
+                  return (
+                    <span key={st} className="row" style={{ gap: 4 }}>
+                      <Pill kind={done ? "done" : failed ? "failed" : undefined}>{done ? "✓ " : failed ? "✗ " : ""}{st}</Pill>
+                      {job.status !== "running" && <button className="btn sm ghost" title="Run only this stage" onClick={() => act(() => api.runStage(job.id, st as Stage, "only"), `Running stage ${st}`)}>run</button>}
+                      {job.status !== "running" && <button className="btn sm ghost" title="Run this stage and everything after it" onClick={() => act(() => api.runStage(job.id, st as Stage, "from"), `Continuing from ${st}`)}>from here ▸</button>}
+                    </span>
+                  );
+                })}
+              </span>
               {job.last_error && <><span className="dim">Error</span><span style={{ color: "var(--red)" }}>{job.last_error}</span></>}
             </div>
             <div>
@@ -73,7 +88,7 @@ export default function JobDetail({ job: initial, onClose, onChanged }: Props) {
         </div>
         <div className="modal-foot">
           {job.status !== "running" && (
-            <button className="btn" onClick={() => act(() => api.runNow(job.id), "Running now")}>Run now</button>
+            <button className="btn" title="Start over from the first stage" onClick={() => act(() => api.runNow(job.id), "Running now")}>Run now (from the start)</button>
           )}
           {(job.status === "scheduled") && (
             <button className="btn" onClick={() => act(() => api.cancelJob(job.id), "Cancelled")}>Cancel</button>

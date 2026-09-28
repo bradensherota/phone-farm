@@ -44,8 +44,14 @@ class QueueItem:
     duration_s: float = 0.0
 
     @property
-    def day_query(self) -> str:  # what to type into Photos search
-        return self.created_at.strftime("%B %-d, %Y")
+    def day_query(self) -> str:  # what to type into Photos search: the day, narrowed to videos/photos
+        day = self.created_at.strftime("%B %-d, %Y")
+        return f"videos {day}" if self.kind == "video" else f"photos {day}"
+
+    @property
+    def cell_predicate(self) -> str:  # finds this exact item in the grid without a full tree dump
+        kind = "Video" if self.kind == "video" else "Photo"
+        return f"label BEGINSWITH '{kind}' AND label CONTAINS '{self.time_part.rsplit(' ', 1)[0]}'"
 
     @property
     def time_part(self) -> str:  # "September 06, 2:11 PM" as Photos labels it (space-normalised)
@@ -112,20 +118,33 @@ def photos_reset(p: Phone) -> None:
 
 
 def _select_cells_for(p: Phone, wanted: list[QueueItem]) -> list[QueueItem]:
-    """In Select mode on the current grid, tap the cells matching `wanted`. Returns those found."""
+    """In Select mode on the current grid, tap the cells matching `wanted`. Returns those found.
+
+    Each item is looked up by an exact predicate (kind + capture minute, then length checked on
+    the label), which is fast and sees loaded cells even off-screen; the grid is scrolled only
+    when nothing matched."""
     found: list[QueueItem] = []
-    for attempt in range(6):
-        cells = _grid_cells(p)
+    H = p.window_height()
+    for attempt in range(10):
         remaining = [w for w in wanted if w not in found]
+        progressed = False
         for w in remaining:
-            hits = [r for lab, r in cells if w.matches(lab)]
-            if hits:
+            for e in p.s(predicate=w.cell_predicate).find_elements():
+                lab = e.label or ""
+                if not w.matches(lab):
+                    continue
+                r = e.bounds
+                if r.y < 0 or r.y + r.height > H - 80:
+                    break  # loaded but off-screen: scroll it in first
                 p.log("info", f"Select {w.filename.split('/')[-1]} ({w.time_part})")
-                _tap_rect(p, hits[0])
+                _tap_rect(p, {"x": r.x, "y": r.y, "width": r.width, "height": r.height})
                 found.append(w)
+                progressed = True
+                break
         if len(found) == len(wanted):
             break
-        p.flick("up", strength=0.6)
+        if not progressed:
+            p.flick("up", strength=0.6)
     return found
 
 

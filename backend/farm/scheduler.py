@@ -160,6 +160,26 @@ class Runner:
         self.busy.add(device_id)
         self._workers[device_id] = asyncio.create_task(self._device_worker(device_id), name=f"worker-{device_id}")
 
+    def run_manual(self, device_id: str, job_id: int) -> bool:
+        """Run one job right now in its own thread, even if the phone is paused (used for
+        stage-by-stage testing). False when the phone is already busy."""
+        if device_id in self.busy:
+            return False
+        self.busy.add(device_id)
+        self.current[device_id] = job_id
+
+        def go():
+            try:
+                self._execute(device_id, job_id)
+            except Exception:
+                log.exception("manual run failed")
+            finally:
+                self.busy.discard(device_id)
+                self.current.pop(device_id, None)
+        import threading
+        threading.Thread(target=go, name=f"manual-{job_id}", daemon=True).start()
+        return True
+
     def kick(self, device_id: str) -> None:
         """Start a worker for this device right away (used by run-now). Safe to call from any thread."""
         loop = getattr(self, "_event_loop", None)
@@ -215,17 +235,51 @@ class Runner:
     def _execute_locked(self, device_id: str, job_id: int) -> None:
         drv = self.manager.driver(device_id)
         self.current[device_id] = job_id
+        # stage plan: a manual request wins; otherwise continue after the last passed stage
+        with session_scope() as s:
+            job = s.get(Job, job_id)
+            if job is None:
+                return
+            manual = job.run_mode
+            stage_only = job.run_stage if manual == "only" else ""
+            if manual == "from":
+                stage_from = job.run_stage
+            elif manual == "restart":
+                stage_from = ""
+            else:
+                stage_from = _next_stage(job.last_stage)
+            if manual == "restart" or (manual == "from" and job.run_stage == "open"):
+                job.last_stage = ""
+            job.run_stage, job.run_mode = "", ""
+            from_start = not stage_only and not stage_from
         if drv is not None and hasattr(drv, "wake") and drv.is_connected():
             drv.wake()  # wake and unlock before anything touches the screen
-        self._ensure_queued(device_id, job_id)
+        if from_start or stage_only == "open" or stage_from == "open":
+            self._ensure_queued(device_id, job_id)
+
+        stage_now = {"name": ""}
 
         def jlog(level: str, message: str) -> None:
             with session_scope() as s:
+                if message.startswith("stage-start:"):
+                    stage_now["name"] = message.split(":", 1)[1]
+                    s.add(JobLog(job_id=job_id, level="info", message=f"▶ Stage: {stage_now['name']}"))
+                    return
+                if message.startswith("checkpoint:"):
+                    name = message.split(":", 1)[1]
+                    j = s.get(Job, job_id)
+                    if j is not None:
+                        j.last_stage = name
+                        j.failed_stage = ""
+                    s.add(JobLog(job_id=job_id, level="ok", message=f"✓ Stage {name} done"))
+                    return
                 s.add(JobLog(job_id=job_id, level=level, message=message))
 
         with session_scope() as s:
             job = s.query(Job).options(selectinload(Job.account), selectinload(Job.media)).get(job_id)
-            if job is None or job.status != JobStatus.scheduled:
+            if job is None or job.status not in (JobStatus.scheduled, JobStatus.failed, JobStatus.cancelled) and not manual:
+                return
+            if job is None:
                 return
             job.status = JobStatus.running
             job.attempts += 1
@@ -263,10 +317,13 @@ class Runner:
                     # oldest-first grids (TikTok): places before the newest item, 0 = newest
                     "album_from_end": album_index,
                     "dry_run": settings_mod.as_bool(settings_mod.get("dry_run", "false")),
+                    "stage_only": stage_only or None,
+                    "stage_from": stage_from or None,
                 },
             )
             attempt = job.attempts
-        jlog("info", f"Attempt {attempt}: {spec.action} as @{spec.handle}")
+        how = f"stage '{stage_only}' only" if stage_only else (f"from stage '{stage_from}'" if stage_from else "all stages")
+        jlog("info", f"Attempt {attempt}: {spec.action} as @{spec.handle} ({how})")
 
         if drv is not None and not drv.is_connected():
             jlog("warn", "Phone's runner isn't answering; restarting it")
@@ -290,10 +347,11 @@ class Runner:
                 shot = drv.screenshot()
             except Exception:
                 pass
-            self._finish(job_id, ok=False, message=f"Driver error: {e}", shot=shot, attempt=attempt)
+            self._finish(job_id, ok=False, message=f"Driver error: {e}", shot=shot, attempt=attempt, stage=stage_now["name"], manual=bool(manual))
             return
-        self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt)
-        if result.ok:
+        self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt,
+                     stage=stage_now["name"], partial=result.partial, manual=bool(manual))
+        if result.ok and not result.partial:
             self._release_after_post(device_id, job_id)
 
     def _ensure_queued(self, device_id: str, job_id: int) -> None:
@@ -337,7 +395,8 @@ class Runner:
         except Exception:
             log.exception("queue release failed")
 
-    def _finish(self, job_id: int, ok: bool, message: str, shot: bytes | None, attempt: int) -> None:
+    def _finish(self, job_id: int, ok: bool, message: str, shot: bytes | None, attempt: int,
+                stage: str = "", partial: bool = False, manual: bool = False) -> None:
         max_attempts = int(settings_mod.get("max_attempts", "2") or 2)
         shot_path = ""
         if shot:
@@ -351,11 +410,23 @@ class Runner:
             job.finished_at = datetime.now()
             if shot_path:
                 job.screenshot_path = shot_path
-            if ok:
+            if ok and partial:
+                # one stage ran by hand; the job stays in the queue, checkpoint kept
+                job.status = JobStatus.scheduled
+                job.attempts = max(0, job.attempts - 1)
+                s.add(JobLog(job_id=job_id, level="ok", message=message))
+            elif ok:
                 job.status = JobStatus.done
+                job.last_stage, job.failed_stage = "", ""
                 s.add(JobLog(job_id=job_id, level="ok", message=message or "Done"))
+            elif manual:
+                job.status = JobStatus.failed
+                job.last_error = message
+                job.failed_stage = stage
+                s.add(JobLog(job_id=job_id, level="error", message=f"{message} (stage: {stage or '?'})"))
             else:
                 job.last_error = message
+                job.failed_stage = stage
                 if job.attempts < max_attempts:
                     pace = float(settings_mod.get("pace_multiplier", "1.0") or 1.0)
                     job.status = JobStatus.scheduled
@@ -364,6 +435,16 @@ class Runner:
                 else:
                     job.status = JobStatus.failed
                     s.add(JobLog(job_id=job_id, level="error", message=f"{message}. Giving up after {job.attempts} attempts."))
+
+
+_STAGES = ("open", "pick", "compose", "post")
+
+
+def _next_stage(last: str) -> str:
+    """Stage to continue from after `last` passed ('' = start over)."""
+    if not last or last not in _STAGES or last == _STAGES[-1]:
+        return ""
+    return _STAGES[_STAGES.index(last) + 1]
 
 
 def _album_index(s: Session, device_id: str, album: str, media: MediaItem) -> int | None:

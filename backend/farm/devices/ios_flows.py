@@ -210,6 +210,12 @@ class Phone:
             return {"type": "pointer", "id": fid, "parameters": {"pointerType": "touch"}, "actions": acts}
         self.c.http.post(f"/session/{self.s.session_id}/actions", {"actions": [finger(-1, "f1"), finger(1, "f2")]})
 
+    def window_height(self) -> float:
+        try:
+            return float(self.s.window_size().height)
+        except Exception:
+            return 844.0
+
     def screenshot(self) -> bytes:
         buf = io.BytesIO()
         self.c.screenshot().save(buf, "PNG")
@@ -546,62 +552,129 @@ def ig_place_link_sticker(p: Phone) -> None:
 
 # ---- flows -------------------------------------------------------------------------
 
+# ---- stages ------------------------------------------------------------------------
+# Every flow is a list of named stages (open -> pick -> compose -> post). The job remembers the
+# last stage that passed, so a failed or hand-stopped run continues from where it broke instead
+# of starting over, and any single stage can be run on its own while testing.
+STAGES = ("open", "pick", "compose", "post")
+
+
+def run_stages(log: LogFn, spec: ActionSpec, stages: list[tuple[str, object]]):
+    """Run `stages` honouring spec.extra['stage_only'] / ['stage_from'].
+
+    A stage function returns None to continue, or (ok, message) to end the flow early (dry run)
+    or as the final result. Returns (ok, message, partial)."""
+    extra = spec.extra or {}
+    names = [n for n, _ in stages]
+    only, start = extra.get("stage_only"), extra.get("stage_from")
+    for v in (only, start):
+        if v and v not in names:
+            raise FlowError(f"This flow has no stage '{v}' (stages: {', '.join(names)})")
+    if only:
+        todo = [(n, f) for n, f in stages if n == only]
+    else:
+        i = names.index(start) if start else 0
+        todo = stages[i:]
+        if i:
+            log("info", f"Continuing from stage '{start}' (earlier stages already done)")
+    for n, f in todo:
+        log("info", f"stage-start:{n}")
+        r = f()
+        log("ok", f"checkpoint:{n}")
+        if r is not None:
+            ok, message = r
+            return ok, message, False
+    if only and only != names[-1]:
+        return True, f"Stage '{only}' done", True
+    return True, "Done", False
+
+
 def ig_story(p: Phone, spec: ActionSpec):
     if spec.media_index is None:
         raise FlowError("No media chosen")
-    p.open(BUNDLES["instagram"])
-    ig_reset(p)
-    ig_ensure_account(p, spec.handle)
-    p.tap(name="mainfeed-tab", what="Home tab")
-    p.tap(name="story-tray-add-button", what="Add to your story")
-    p.wait(name="gallery-header-title", what="story gallery")
-    ig_pick_gallery_item(p, spec)
-    if p.tap_if(name="story-trimmer-done-button", what="Trim: Done", timeout=4):
-        pass
-    p.wait(name="share-to-your-story", what="story editor")
-    if spec.link:
-        ig_add_link_sticker(p, spec.link, spec.link_text)
-    if (spec.extra or {}).get("dry_run"):
-        p.log("info", "DRY RUN: stopping before 'Share to your story'")
-        return True, "Dry run reached Share to your story"
-    p.tap(name="share-to-your-story", what="Share to your story", pause=2)
-    p.wait(name="story-tray-add-button", what="feed after sharing", timeout=40)
-    return True, "Story shared"
+
+    def open_():
+        p.open(BUNDLES["instagram"])
+        ig_reset(p)
+        ig_ensure_account(p, spec.handle)
+
+    def pick():
+        if not p.exists(name="gallery-header-title", timeout=1):
+            p.tap(name="mainfeed-tab", what="Home tab")
+            p.tap(name="story-tray-add-button", what="Add to your story")
+            p.wait(name="gallery-header-title", what="story gallery")
+        ig_pick_gallery_item(p, spec)
+        if p.tap_if(name="story-trimmer-done-button", what="Trim: Done", timeout=4):
+            pass
+        p.wait(name="share-to-your-story", what="story editor")
+
+    def compose():
+        if not p.exists(name="share-to-your-story", timeout=3):
+            raise FlowError("Not on the story editor (run the 'pick' stage first)")
+        if spec.link:
+            ig_add_link_sticker(p, spec.link, spec.link_text)
+
+    def post():
+        if not p.exists(name="share-to-your-story", timeout=3):
+            raise FlowError("Not on the story editor (run the 'pick' stage first)")
+        if (spec.extra or {}).get("dry_run"):
+            p.log("info", "DRY RUN: stopping before 'Share to your story'")
+            return True, "Dry run reached Share to your story"
+        p.tap(name="share-to-your-story", what="Share to your story", pause=2)
+        p.wait(name="story-tray-add-button", what="feed after sharing", timeout=40)
+        return True, "Story shared"
+
+    return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
 
 
 def ig_reel(p: Phone, spec: ActionSpec):
     if spec.media_index is None:
         raise FlowError("No media chosen")
-    p.open(BUNDLES["instagram"])
-    ig_reset(p)
-    ig_ensure_account(p, spec.handle)
-    p.tap(name="profile-add-button", what="Create (+)")
-    p.tap(name="creation-reel", what="Reel")
-    p.wait(name="gallery-header-title", what="reel gallery")
-    ms = p.el(name="multi-select").wait(timeout=3, raise_error=False)
-    if ms and (ms.label or "").lower() == "cancel":
-        p.log("info", "Turn off multi-select")
-        ms.tap()
-        time.sleep(1)
-    ig_pick_gallery_item(p, spec)
-    p.tap(name="sundial-right-chevron-next-button", what="Next", timeout=30, pause=2.5)
-    p.wait(name="share-sheet-share-button", what="reel share screen", timeout=30)
-    if spec.caption:
-        p.tap(name="caption-cell-text-view", what="caption")
-        p.type(spec.caption, "caption")
-        # The caption opens a full-screen editor; its checkmark is the "OK" button.
-        if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
-            p.dismiss_keyboard()
-    if (spec.extra or {}).get("dry_run"):
-        p.log("info", "DRY RUN: stopping before 'Share'")
-        return True, "Dry run reached Share"
-    p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=3)
-    # Instagram returns to the feed/profile while it uploads in the background
-    for _ in range(30):
-        if p.exists(name="mainfeed-tab", timeout=1) or p.exists(name="profile-tab", timeout=1):
-            return True, "Reel shared (uploading)"
-        time.sleep(1)
-    raise FlowError("Did not return to the feed after Share")
+
+    def open_():
+        p.open(BUNDLES["instagram"])
+        ig_reset(p)
+        ig_ensure_account(p, spec.handle)
+
+    def pick():
+        if not p.exists(name="gallery-header-title", timeout=1):
+            p.tap(name="profile-add-button", what="Create (+)")
+            p.tap(name="creation-reel", what="Reel")
+            p.wait(name="gallery-header-title", what="reel gallery")
+        ms = p.el(name="multi-select").wait(timeout=3, raise_error=False)
+        if ms and (ms.label or "").lower() == "cancel":
+            p.log("info", "Turn off multi-select")
+            ms.tap()
+            time.sleep(1)
+        ig_pick_gallery_item(p, spec)
+        p.tap(name="sundial-right-chevron-next-button", what="Next", timeout=30, pause=2.5)
+        p.wait(name="share-sheet-share-button", what="reel share screen", timeout=30)
+
+    def compose():
+        if not p.exists(name="share-sheet-share-button", timeout=3):
+            raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
+        if spec.caption:
+            p.tap(name="caption-cell-text-view", what="caption")
+            p.type(spec.caption, "caption")
+            # The caption opens a full-screen editor; its checkmark is the "OK" button.
+            if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
+                p.dismiss_keyboard()
+
+    def post():
+        if not p.exists(name="share-sheet-share-button", timeout=3):
+            raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
+        if (spec.extra or {}).get("dry_run"):
+            p.log("info", "DRY RUN: stopping before 'Share'")
+            return True, "Dry run reached Share"
+        p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=3)
+        # Instagram returns to the feed/profile while it uploads in the background
+        for _ in range(30):
+            if p.exists(name="mainfeed-tab", timeout=1) or p.exists(name="profile-tab", timeout=1):
+                return True, "Reel shared (uploading)"
+            time.sleep(1)
+        raise FlowError("Did not return to the feed after Share")
+
+    return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
 
 
 # ---- TikTok -----------------------------------------------------------------------
@@ -716,8 +789,11 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
     fn = FLOWS.get(spec.action)
     if fn is None:
         return ActionResult(False, f"No flow for {spec.action}")
+    partial = False
     try:
-        ok, message = fn(phone, spec)
+        r = fn(phone, spec)
+        ok, message = r[0], r[1]
+        partial = bool(r[2]) if len(r) > 2 else False
     except FlowError as e:
         ok, message = False, str(e)
     shot = None
@@ -726,8 +802,8 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
     except Exception:
         pass
     try:
-        if ok:
+        if ok and not partial:
             phone.home()
     finally:
         phone.close()  # release any held touch, detach from the app
-    return ActionResult(ok, message, shot)
+    return ActionResult(ok, message, shot, partial=partial)

@@ -55,6 +55,9 @@ export interface Device {
   today: { total: number; done: number; failed: number; scheduled: number; running: number };
 }
 
+export type Stage = "open" | "pick" | "compose" | "post";
+export const STAGES: Stage[] = ["open", "pick", "compose", "post"];
+
 export interface Job {
   id: number;
   account_id: number;
@@ -74,6 +77,8 @@ export interface Job {
   has_screenshot: boolean;
   group_key: string;
   group_origin_account_id: number | null;
+  last_stage: Stage | "";
+  failed_stage: Stage | "";
   started_at: string | null;
   finished_at: string | null;
   next_run: string | null;
@@ -186,6 +191,7 @@ export const api = {
   upsertJobs: (body: JobIn[]) => req<Job[]>("/jobs", { method: "POST", body: JSON.stringify(body) }),
   deleteJob: (id: number) => req<{ ok: true }>(`/jobs/${id}`, { method: "DELETE" }),
   runNow: (id: number) => req<Job>(`/jobs/${id}/run-now`, { method: "POST" }),
+  runStage: (id: number, stage: Stage, mode: "only" | "from") => req<Job>(`/jobs/${id}/run-stage?stage=${stage}&mode=${mode}`, { method: "POST" }),
   cancelJob: (id: number) => req<Job>(`/jobs/${id}/cancel`, { method: "POST" }),
   jobLogs: (id: number) => req<JobLog[]>(`/jobs/${id}/logs`),
 

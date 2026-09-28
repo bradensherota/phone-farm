@@ -121,6 +121,8 @@ class JobOut(ORM):
     has_screenshot: bool = False
     group_key: str = ""
     group_origin_account_id: int | None = None
+    last_stage: str = ""
+    failed_stage: str = ""
     started_at: datetime | None
     finished_at: datetime | None
     next_run: datetime | None = None

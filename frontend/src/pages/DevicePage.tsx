@@ -5,13 +5,14 @@ import { actionMeta, api, fmtDateTime, ymd } from "../lib/api";
 import { PhoneScreen, Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import { MediaPreview, RollGrid } from "../components/MediaPicker";
 import JobDetail from "../components/JobDetail";
+import DayChecklist from "../components/DayChecklist";
 
-type Tab = "accounts" | "roll" | "schedule";
+type Tab = "day" | "accounts" | "roll" | "schedule";
 
 export default function DevicePage() {
   const { id = "" } = useParams();
   const { data: device, reload } = usePoll(() => api.device(id), 3000, [id]);
-  const [tab, setTab] = useState<Tab>("accounts");
+  const [tab, setTab] = useState<Tab>("day");
   if (!device) return <div className="page"><div className="empty">Loading…</div></div>;
   return (
     <div className="page">
@@ -25,11 +26,13 @@ export default function DevicePage() {
         </div>
         <div>
           <div className="tabs">
+            <button className={tab === "day" ? "active" : ""} onClick={() => setTab("day")}>Day checklist</button>
             <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Accounts ({device.accounts.length})</button>
             <button className={tab === "roll" ? "active" : ""} onClick={() => setTab("roll")}>Camera roll ({device.media_count})</button>
             <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Schedule</button>
           </div>
-          {device.kind === "ios" && <WakeTestCard device={device} />}
+          {tab === "day" && <DayChecklist device={device} />}
+          {tab === "day" && device.kind === "ios" && <WakeTestCard device={device} />}
           {tab === "accounts" && <AccountsTab device={device} onChanged={reload} />}
           {tab === "roll" && <RollTab device={device} onChanged={reload} />}
           {tab === "schedule" && <ScheduleTab device={device} />}

@@ -321,14 +321,10 @@ def tt_select_album_blind(bp: BlindPhone, album: str, dropdown_region: tuple, li
     raise FlowError(f"Album '{album}' not found in TikTok's album list")
 
 
-def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
-    extra = spec.extra or {}
-    album = (extra.get("album") or "").strip()
-    if not album or extra.get("album_from_end") is None:
-        raise FlowError("TikTok posts need the item in the queue or story album")
+def tt_go_home(bp: BlindPhone) -> None:
+    """Open TikTok and get to its tab bar, closing any leftover camera/composer screen."""
     W, H = bp.pt_w, bp.pt_h
     bp.launch_from_home("TikTok")
-    # if a camera/composer was left open, close it (X top-left) rather than hitting the shutter
     for _ in range(7):
         words = bp.read()
         if bp.find(r"^(Home|Inbox|Friends|Profile)$", words, region=(0, H - 90, W, H)):
@@ -341,60 +337,83 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
             continue
         time.sleep(1.5)
     bp.wait_for(r"^(Home|Inbox|Friends|Profile)$", timeout=20, region=(0, H - 90, W, H), what="TikTok tab bar")
-    tt_ensure_account(bp, spec.handle)
-    bp.tap(W / 2, H - 60, "Create (+)", pause=3.0)
-    # the upload entry is the camera-roll thumbnail at the bottom-left, on the CAMERA/CREATE row
-    # bottom mode row reads "CAMERA / CREATE" on some builds, "POST / CREATE / LIVE" on others
-    row = bp.wait_for(r"^(CAMERA|POST|CREATE)$", timeout=20, region=(0, H * 0.85, W, H), what="camera screen")
-    bp.tap(32, row.cy, "Upload (camera roll thumbnail)", pause=3.0)
-    # gallery: album dropdown ("Recents ⌄" or the current album name) sits top-middle
-    bp.wait_for(r"^(Next|Select multiple)$", timeout=20, what="gallery")
-    tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 120))
-    words = bp.read()
-    cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
-                           float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
-    bp.tap(cx, cy, "planned item", pause=1.5)
-    bp.tap_text(r"^Next$", timeout=10, region=(W / 2, H / 2, W, H), what="Next (to editor)", pause=3.0)
-    time.sleep(3)  # let TikTok attach a sound when it detects no speech
-    # Some builds show an editor first (TikTok may auto-add a sound after a few seconds when it
-    # hears no speech); others go straight to the post screen.
-    w = bp.wait_for(r"^Next$|^Add description|Post$", timeout=40, what="editor or post screen")
-    if w.text.strip() == "Next":
-        time.sleep(5)
-        bp.tap_text(r"^Next$", timeout=10, region=(W / 2, 0, W, H), what="Next (to caption)", pause=3.0)
-    bp.wait_for(r"Post$", timeout=20, region=(0, H * 0.8, W, H), what="Post screen")
-    if spec.caption:
-        field = bp.find(r"Add description|Add caption|Describe", bp._words)
-        if field is None:
-            raise FlowError("Caption field not found on TikTok's post screen")
-        bp.tap(field.x + 20, field.cy, "caption", pause=1.0)
-        bp.type_keys(spec.caption)
-        time.sleep(1.0)
-        if not bp.find(re.escape(spec.caption[:12]), bp.read()):
-            raise FlowError("Caption did not appear in the field")
-    # with the keyboard up, Post sits top-right; otherwise it's the red button at the bottom
-    words = bp._words
-    post = bp.find(r"^Post$", words, region=(W * 0.7, 0, W, 120)) or bp.find(r"Post$", words, region=(0, H * 0.8, W, H))
-    if post is None:
-        raise FlowError("Post button not found")
-    if extra.get("dry_run"):
-        bp.log("info", f"DRY RUN: would tap Post at ({post.cx:.0f},{post.cy:.0f}); stopping here")
-        return True, "Dry run reached the Post screen"
-    bp.tap_word(post, "Post", pause=4.0)
-    for _ in range(5):
+
+
+def tt_post_blind(bp: BlindPhone, spec: ActionSpec):
+    from .ios_flows import run_stages
+    extra = spec.extra or {}
+    album = (extra.get("album") or "").strip()
+    if not album or extra.get("album_from_end") is None:
+        raise FlowError("TikTok posts need the item in the queue or story album")
+    W, H = bp.pt_w, bp.pt_h
+
+    def open_():
+        tt_go_home(bp)
+        tt_ensure_account(bp, spec.handle)
+
+    def pick():
         words = bp.read()
-        if bp.find(r"Video posted", words):
-            break
-        if tt_dismiss_prompt(bp, words):
-            continue
-        if not bp.find(r"Post$", words, region=(0, H * 0.8, W, H)) and not bp.find(r"^Post$", words, region=(W * 0.7, 0, W, 120)):
-            break
-        time.sleep(2)
-    words = bp.read()
-    if bp.find(r"Post$", words, region=(0, H * 0.8, W, H)) and not bp.find(r"Video posted", words):
-        raise FlowError("Still on the post screen after tapping Post")
-    tt_dismiss_prompt(bp, words)
-    return True, "TikTok post shared"
+        if not bp.find(r"^(Next|Select multiple)$", words):
+            if not bp.find(r"^(CAMERA|POST|CREATE)$", words, region=(0, H * 0.85, W, H)):
+                if not bp.find(r"^(Home|Inbox|Friends|Profile)$", words, region=(0, H - 90, W, H)):
+                    raise FlowError("TikTok isn't on its tab bar (run the 'open' stage first)")
+                bp.tap(W / 2, H - 60, "Create (+)", pause=3.0)
+            # the upload entry is the camera-roll thumbnail at the bottom-left, on the CAMERA/CREATE row
+            row = bp.wait_for(r"^(CAMERA|POST|CREATE)$", timeout=20, region=(0, H * 0.85, W, H), what="camera screen")
+            bp.tap(32, row.cy, "Upload (camera roll thumbnail)", pause=3.0)
+        bp.wait_for(r"^(Next|Select multiple)$", timeout=20, what="gallery")
+        tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 120))
+        words = bp.read()
+        cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
+                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
+        bp.tap(cx, cy, "planned item", pause=1.5)
+        bp.tap_text(r"^Next$", timeout=10, region=(W / 2, H / 2, W, H), what="Next (to editor)", pause=3.0)
+        time.sleep(3)  # let TikTok attach a sound when it detects no speech
+        w = bp.wait_for(r"^Next$|^Add description|Post$", timeout=40, what="editor or post screen")
+        if w.text.strip() == "Next":
+            time.sleep(5)
+            bp.tap_text(r"^Next$", timeout=10, region=(W / 2, 0, W, H), what="Next (to caption)", pause=3.0)
+        bp.wait_for(r"Post$", timeout=20, region=(0, H * 0.8, W, H), what="Post screen")
+
+    def compose():
+        if not bp.find(r"Post$", bp.read(), region=(0, H * 0.8, W, H)) and not bp.find(r"Add description|Add caption|Describe", bp._words):
+            raise FlowError("Not on TikTok's post screen (run the 'pick' stage first)")
+        if spec.caption:
+            field = bp.find(r"Add description|Add caption|Describe", bp._words)
+            if field is None:
+                raise FlowError("Caption field not found on TikTok's post screen")
+            bp.tap(field.x + 20, field.cy, "caption", pause=1.0)
+            bp.type_keys(spec.caption)
+            time.sleep(1.0)
+            if not bp.find(re.escape(spec.caption[:12]), bp.read()):
+                raise FlowError("Caption did not appear in the field")
+
+    def post():
+        # with the keyboard up, Post sits top-right; otherwise it's the red button at the bottom
+        words = bp.read()
+        post_btn = bp.find(r"^Post$", words, region=(W * 0.7, 0, W, 120)) or bp.find(r"Post$", words, region=(0, H * 0.8, W, H))
+        if post_btn is None:
+            raise FlowError("Post button not found (run the 'pick' stage first)")
+        if extra.get("dry_run"):
+            bp.log("info", f"DRY RUN: would tap Post at ({post_btn.cx:.0f},{post_btn.cy:.0f}); stopping here")
+            return True, "Dry run reached the Post screen"
+        bp.tap_word(post_btn, "Post", pause=4.0)
+        for _ in range(5):
+            words = bp.read()
+            if bp.find(r"Video posted", words):
+                break
+            if tt_dismiss_prompt(bp, words):
+                continue
+            if not bp.find(r"Post$", words, region=(0, H * 0.8, W, H)) and not bp.find(r"^Post$", words, region=(W * 0.7, 0, W, 120)):
+                break
+            time.sleep(2)
+        words = bp.read()
+        if bp.find(r"Post$", words, region=(0, H * 0.8, W, H)) and not bp.find(r"Video posted", words):
+            raise FlowError("Still on the post screen after tapping Post")
+        tt_dismiss_prompt(bp, words)
+        return True, "TikTok post shared"
+
+    return run_stages(bp.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
 
 
 def tt_current_handle(bp: BlindPhone):
@@ -469,12 +488,13 @@ def run_blind(driver, spec: ActionSpec, log: LogFn):
     from .base import ActionResult
     bp = BlindPhone(driver.base, log)
     bp.handle = spec.handle
+    partial = False
     try:
         if spec.action == "tt_story":
             from .ios_blind_story import tt_story_blind
-            ok, message = tt_story_blind(bp, spec, tt_open_story_gallery)
+            ok, message, partial = tt_story_blind(bp, spec, tt_open_story_gallery)
         else:
-            ok, message = tt_post_blind(bp, spec)
+            ok, message, partial = tt_post_blind(bp, spec)
     except FlowError as e:
         ok, message = False, str(e)
     shot = None
@@ -483,8 +503,8 @@ def run_blind(driver, spec: ActionSpec, log: LogFn):
     except Exception:
         pass
     try:
-        if ok:
+        if ok and not partial:
             bp.home()
     finally:
         bp.release()
-    return ActionResult(ok, message, shot)
+    return ActionResult(ok, message, shot, partial=partial)

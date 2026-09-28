@@ -43,6 +43,7 @@ class ActionResult:
     ok: bool
     message: str = ""
     screenshot_png: bytes | None = None
+    partial: bool = False  # a single stage ran; the job is not finished
 
 
 LogFn = Callable[[str, str], None]  # (level, message)

@@ -76,6 +76,7 @@ export default function DayChecklist({ device }: { device: Device }) {
           const meta = actionMeta(job.action);
           const app = APP[job.platform] || job.platform;
           const switchLine = app !== prevApp || job.handle !== prevHandle;
+          const verb = app === prevApp ? "Switch" : "Open";
           prevApp = app; prevHandle = job.handle;
           return (
             <div key={job.id} className="ck-job">
@@ -83,7 +84,7 @@ export default function DayChecklist({ device }: { device: Device }) {
                 <div className="ck-line">
                   <Icon m={stageMark(job, "open")} />
                   <PlatformIcon platform={job.platform} />
-                  <span>{app === prevApp && switchLine && job.handle !== prevHandle ? "Switch" : "Open"} {app} as @{job.handle}</span>
+                  <span>{verb} {app} as @{job.handle}</span>
                   <StageBtns job={job} stage="open" />
                 </div>
               )}

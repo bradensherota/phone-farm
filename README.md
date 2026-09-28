@@ -154,3 +154,15 @@ survives long locked stretches before trusting an overnight schedule. The phone'
 leaks a connection per request when the phone is locked, so the app never asks it for
 screenshots while locked and polls the screen only while the page is visible. Leave the phone
 page closed overnight anyway; less traffic to the phone is always safer.
+
+## Checkpoints
+
+Every flow is four stages: **open** (app + account), **pick** (album and the exact item, through
+to the editor), **compose** (caption, link sticker), **post**. A job remembers the last stage
+that passed and the stage that broke, and any later run continues from the next stage instead
+of starting over ("Run now" in the job details starts from the beginning). The **Day checklist**
+tab on a phone page lists the day as checkpoints: wake, fill the queue album, each app/account
+switch, each job with its stages, sleep. Every line has **Run** (only that line; the phone must
+already be where the previous line left it) and **Continue from here** (that line and everything
+after it). While the phone is **paused** only the line you press runs, which is how a day is
+stepped through by hand; resume the phone and the queue keeps going on its own.

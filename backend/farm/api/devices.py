@@ -104,6 +104,7 @@ def stop_device(device_id: str, s: Session = Depends(get_session)):
         raise HTTPException(404, "device not found")
     d.paused = True
     s.commit()
+    runner.force.discard(device_id)
     drv = manager.driver(device_id)
     if drv is not None and hasattr(drv, "abort"):
         drv.abort()

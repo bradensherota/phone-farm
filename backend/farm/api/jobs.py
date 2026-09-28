@@ -226,7 +226,7 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
     s.add(JobLog(job_id=j.id, level="info", message=f"Manual run: stage '{stage}' ({'only this stage' if mode == 'only' else 'and everything after'})"))
     s.commit()
     s.refresh(j)
-    if not runner.run_manual(j.device_id, j.id):
+    if not runner.run_manual(j.device_id, j.id, then_continue=(mode == "from")):
         raise HTTPException(409, "phone is busy with another job")
     return job_out(j)
 

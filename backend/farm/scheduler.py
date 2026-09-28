@@ -78,6 +78,7 @@ class Runner:
         self._workers: dict[str, asyncio.Task] = {}
         self._stopping = False
         self._prepared_on: dict[str, object] = {}
+        self.force: set[str] = set()  # phones allowed to keep going through the day although paused
 
     # ---- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -161,22 +162,31 @@ class Runner:
         self.busy.add(device_id)
         self._workers[device_id] = asyncio.create_task(self._device_worker(device_id), name=f"worker-{device_id}")
 
-    def run_manual(self, device_id: str, job_id: int) -> bool:
+    def run_manual(self, device_id: str, job_id: int, then_continue: bool = False) -> bool:
         """Run one job right now in its own thread, even if the phone is paused (used for
-        stage-by-stage testing). False when the phone is already busy."""
+        stage-by-stage testing). With `then_continue`, a finished job hands over to the normal
+        queue so the rest of the day keeps going, paused or not, until Stop is pressed.
+        False when the phone is already busy."""
         if device_id in self.busy:
             return False
         self.busy.add(device_id)
         self.current[device_id] = job_id
 
         def go():
+            done = False
             try:
                 self._execute(device_id, job_id)
+                with session_scope() as s:
+                    j = s.get(Job, job_id)
+                    done = j is not None and j.status == JobStatus.done
             except Exception:
                 log.exception("manual run failed")
             finally:
                 self.busy.discard(device_id)
                 self.current.pop(device_id, None)
+            if then_continue and done:
+                self.force.add(device_id)
+                self.kick(device_id)
         import threading
         threading.Thread(target=go, name=f"manual-{job_id}", daemon=True).start()
         return True
@@ -195,7 +205,7 @@ class Runner:
             while not self._stopping:
                 with session_scope() as s:
                     device = s.get(Device, device_id)
-                    if device is None or device.paused:
+                    if device is None or (device.paused and device_id not in self.force):
                         return
                     if not settings_mod.as_bool(settings_mod.get("runner_enabled", "true")):
                         return
@@ -219,6 +229,7 @@ class Runner:
             self.busy.discard(device_id)
             self.current.pop(device_id, None)
             self._workers.pop(device_id, None)
+            self.force.discard(device_id)
             # queue done: let the phone go back to sleep until the next routine
             drv = self.manager.driver(device_id)
             if drv is not None and hasattr(drv, "sleep"):

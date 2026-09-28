@@ -507,9 +507,5 @@ def run_blind(driver, spec: ActionSpec, log: LogFn):
         shot = bp.screenshot_png()
     except Exception:
         pass
-    try:
-        if ok and not partial:
-            bp.home()
-    finally:
-        bp.release()
+    bp.release()  # stay where we are; the next job opens what it needs
     return ActionResult(ok, message, shot, partial=partial)

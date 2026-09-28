@@ -850,9 +850,6 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         shot = phone.screenshot()
     except Exception:
         pass
-    try:
-        if ok and not partial:
-            phone.home()
-    finally:
-        phone.close()  # release any held touch, detach from the app
+    # stay in the app: the next job on this phone opens whatever it needs itself
+    phone.close()  # release any held touch, detach from the app
     return ActionResult(ok, message, shot, partial=partial)

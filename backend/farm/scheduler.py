@@ -244,6 +244,7 @@ class Runner:
                     "album_count": _album_count(s, device_id, album) if album else None,
                     # oldest-first grids (TikTok): places before the newest item, 0 = newest
                     "album_from_end": album_index,
+                    "dry_run": settings_mod.as_bool(settings_mod.get("dry_run", "false")),
                 },
             )
             attempt = job.attempts

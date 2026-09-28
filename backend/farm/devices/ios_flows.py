@@ -561,6 +561,9 @@ def ig_story(p: Phone, spec: ActionSpec):
     p.wait(name="share-to-your-story", what="story editor")
     if spec.link:
         ig_add_link_sticker(p, spec.link, spec.link_text)
+    if (spec.extra or {}).get("dry_run"):
+        p.log("info", "DRY RUN: stopping before 'Share to your story'")
+        return True, "Dry run reached Share to your story"
     p.tap(name="share-to-your-story", what="Share to your story", pause=2)
     p.wait(name="story-tray-add-button", what="feed after sharing", timeout=40)
     return True, "Story shared"
@@ -589,6 +592,9 @@ def ig_reel(p: Phone, spec: ActionSpec):
         # The caption opens a full-screen editor; its checkmark is the "OK" button.
         if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
             p.dismiss_keyboard()
+    if (spec.extra or {}).get("dry_run"):
+        p.log("info", "DRY RUN: stopping before 'Share'")
+        return True, "Dry run reached Share"
     p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=3)
     # Instagram returns to the feed/profile while it uploads in the background
     for _ in range(30):

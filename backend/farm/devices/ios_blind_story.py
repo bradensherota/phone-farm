@@ -134,6 +134,9 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
         _drag(bp, st.cx, st.cy, tx, ty)
     # share
     btn = bp.wait_for(r"^Your St", timeout=10, region=(0, H * 0.8, W, H), what="Your Story button")
+    if extra.get("dry_run"):
+        bp.log("info", f"DRY RUN: would tap Your Story at ({btn.cx:.0f},{btn.cy:.0f}); stopping here")
+        return True, "Dry run reached the Your Story button"
     bp.tap_word(btn, "Your Story", pause=4.0)
     for _ in range(4):
         words = bp.read()

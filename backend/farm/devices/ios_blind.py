@@ -322,6 +322,7 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
                            float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
     bp.tap(cx, cy, "planned item", pause=1.5)
     bp.tap_text(r"^Next$", timeout=10, region=(W / 2, H / 2, W, H), what="Next (to editor)", pause=3.0)
+    time.sleep(3)  # let TikTok attach a sound when it detects no speech
     # Some builds show an editor first (TikTok may auto-add a sound after a few seconds when it
     # hears no speech); others go straight to the post screen.
     w = bp.wait_for(r"^Next$|^Add description|Post$", timeout=40, what="editor or post screen")

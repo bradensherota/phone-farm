@@ -183,4 +183,5 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sim_step_seconds": "0.6",  # how long each simulated step takes
     "sim_failure_rate": "0.0",  # 0..1, inject failures to test retry/alerts
     "max_attempts": "2",
+    "dry_run": "false",  # true = flows stop right before the final Post/Share button
 }

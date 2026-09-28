@@ -61,6 +61,7 @@ export default function DayChecklist({ device }: { device: Device }) {
         <input className="input" type="date" style={{ width: 150 }} value={day} onChange={(e) => setDay(e.target.value)} />
         <span className="small dim grow">Each line is a checkpoint. {device.paused ? "Phone is paused: lines only run when you press them." : "Phone is live: after a line finishes, the queue keeps going on its own."}</span>
         {device.busy && <Pill kind="running">running</Pill>}
+        {device.busy && <button className="btn sm stop" onClick={async () => { try { await api.stopDevice(device.id); toast("Stopping after the current step. Phone paused."); reload(); } catch (e: any) { toast(e.message, "err"); } }}>■ Stop</button>}
       </div>
       <div className="card-body checklist">
         <div className="ck-line">

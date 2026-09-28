@@ -511,7 +511,27 @@ class IOSDriver(Driver):
         return meta
 
     # ---- Photos albums (queue) ------------------------------------------
+    # ---- stop button -----------------------------------------------------
+    # Every flow logs before each tap; the guarded log function raises when a stop was asked
+    # for, so the flow ends at its next step and the phone is left where it is.
+    abort_requested = False
+
+    def abort(self) -> None:
+        self.abort_requested = True
+
+    def _guarded(self, log_fn: LogFn) -> LogFn:
+        from .base import FlowAborted
+        self.abort_requested = False
+
+        def guarded(level: str, message: str) -> None:
+            log_fn(level, message)
+            if self.abort_requested:
+                log_fn("warn", "Stopped by hand")
+                raise FlowAborted("Stopped by hand")
+        return guarded
+
     def add_to_album(self, items: list, album: str, log_fn: LogFn) -> list:
+        log_fn = self._guarded(log_fn)
         from . import ios_flows, ios_photos
         self.wake()
         phone = ios_flows.Phone(self.base, log_fn)
@@ -526,6 +546,7 @@ class IOSDriver(Driver):
             self._new_standby_session()
 
     def remove_from_album(self, item, album: str, log_fn: LogFn) -> bool:
+        log_fn = self._guarded(log_fn)
         from . import ios_flows, ios_photos
         self.wake()
         phone = ios_flows.Phone(self.base, log_fn)
@@ -540,6 +561,7 @@ class IOSDriver(Driver):
             self._new_standby_session()
 
     def clear_album(self, album: str, log_fn: LogFn) -> bool:
+        log_fn = self._guarded(log_fn)
         from . import ios_flows, ios_photos
         self.wake()
         phone = ios_flows.Phone(self.base, log_fn)
@@ -556,11 +578,20 @@ class IOSDriver(Driver):
     # ---- actions ---------------------------------------------------------
     def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:
         from . import ios_flows
+        from .base import FlowAborted
+        log_fn = self._guarded(log_fn)
         self.wake()
         try:
             result = ios_flows.run(self, spec, log_fn)
             self._new_standby_session()
             return result
+        except FlowAborted:
+            shot = None
+            try:
+                shot = self.screenshot()
+            except Exception:
+                pass
+            return ActionResult(False, "Stopped by hand", shot)
         except Exception as e:
             log.exception("%s: flow failed", self.name)
             shot = None

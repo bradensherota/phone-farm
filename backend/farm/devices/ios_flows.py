@@ -796,6 +796,9 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         partial = bool(r[2]) if len(r) > 2 else False
     except FlowError as e:
         ok, message = False, str(e)
+    except Exception:
+        phone.close()
+        raise
     shot = None
     try:
         shot = phone.screenshot()

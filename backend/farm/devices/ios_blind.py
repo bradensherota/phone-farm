@@ -497,6 +497,9 @@ def run_blind(driver, spec: ActionSpec, log: LogFn):
             ok, message, partial = tt_post_blind(bp, spec)
     except FlowError as e:
         ok, message = False, str(e)
+    except Exception:
+        bp.release()
+        raise
     shot = None
     try:
         shot = bp.screenshot_png()

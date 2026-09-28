@@ -95,6 +95,21 @@ def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
     return {"started": len(jobs)}
 
 
+@router.post("/{device_id}/stop")
+def stop_device(device_id: str, s: Session = Depends(get_session)):
+    """Stop button: pause the phone so nothing else starts, and end the running flow at its
+    next step. The phone is left on whatever screen it was on."""
+    d = s.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+    d.paused = True
+    s.commit()
+    drv = manager.driver(device_id)
+    if drv is not None and hasattr(drv, "abort"):
+        drv.abort()
+    return {"stopped": True, "was_busy": device_id in runner.busy}
+
+
 @router.post("/{device_id}/wake")
 def wake_device(device_id: str):
     drv = manager.driver(device_id)

@@ -120,6 +120,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         </div>
         <div className="field"><label>&nbsp;</label><button className="btn" disabled={!dirty} onClick={save}>Save</button></div>
         <div className="field"><label>&nbsp;</label><button className={`btn ${device.paused ? "primary" : ""}`} onClick={togglePause}>{device.paused ? "Resume phone" : "Pause phone"}</button></div>
+        <div className="field"><label>&nbsp;</label><button className="btn stop" title="End what the phone is doing at its next step and pause it. The phone stays on its current screen." onClick={async () => { try { const r = await api.stopDevice(device.id); toast(r.was_busy ? "Stopping after the current step. Phone paused." : "Nothing was running. Phone paused."); onChanged(); } catch (e: any) { toast(e.message, "err"); } }}>■ Stop</button></div>
       </div>
     </div>
   );

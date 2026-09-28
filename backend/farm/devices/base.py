@@ -49,6 +49,10 @@ class ActionResult:
 LogFn = Callable[[str, str], None]  # (level, message)
 
 
+class FlowAborted(Exception):
+    """Raised inside a flow when the person pressed Stop; the flow ends at its next step."""
+
+
 class Driver(ABC):
     kind: str = "base"
 

@@ -419,7 +419,7 @@ class Runner:
                 job.status = JobStatus.done
                 job.last_stage, job.failed_stage = "", ""
                 s.add(JobLog(job_id=job_id, level="ok", message=message or "Done"))
-            elif manual:
+            elif manual or message == "Stopped by hand":
                 job.status = JobStatus.failed
                 job.last_error = message
                 job.failed_stage = stage

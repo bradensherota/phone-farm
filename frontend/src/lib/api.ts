@@ -170,6 +170,7 @@ export const api = {
   wakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`),
   startWakeTest: (id: string, steps: number[]) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "POST", body: JSON.stringify({ steps }) }),
   cancelWakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "DELETE" }),
+  stopDevice: (id: string) => req<{ stopped: boolean; was_busy: boolean }>(`/devices/${id}/stop`, { method: "POST" }),
   wakeDevice: (id: string) => req<{ locked: boolean }>(`/devices/${id}/wake`, { method: "POST" }),
   sleepDevice: (id: string) => req<{ locked: boolean; error?: string }>(`/devices/${id}/sleep`, { method: "POST" }),
   clearQueue: (id: string) => req<{ cleared: boolean }>(`/devices/${id}/queue/clear`, { method: "POST" }),

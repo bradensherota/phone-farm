@@ -132,13 +132,18 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                     o_action = next((a for a, m in ACTIONS.items() if m["platform"] == other.platform and m["label"] == "Story"), None)
                     if o_action is None:
                         continue
-                    twin = (
+                    existing = (
                         s.query(Job)
                         .filter(Job.account_id == other.id, Job.run_date == item.run_date, Job.action == o_action)
-                        .first()
+                        .all()
                     )
-                    if twin is not None and twin.status in (JobStatus.running, JobStatus.done):
+                    # never post the same clip twice on one account
+                    if any(e.media_id == job.media_id and e.status in (JobStatus.running, JobStatus.done) for e in existing):
                         continue
+                    # reuse this group's own copy, else an unposted story of theirs; a story that already
+                    # posted stays and this one is added alongside it
+                    twin = next((e for e in existing if e.group_key == key), None) or \
+                           next((e for e in existing if e.status not in (JobStatus.running, JobStatus.done)), None)
                     if twin is None:
                         twin = Job(account_id=other.id, device_id=other.device_id, action=o_action)
                         s.add(twin)

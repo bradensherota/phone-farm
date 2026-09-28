@@ -88,7 +88,7 @@ export default function PlannerPage() {
   );
 }
 
-function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart }: {
+function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, runDay }: {
   device: Device; days: Date[]; today: string; byCell: Map<string, Job[]>;
   onPick: (a: Account, date: string) => void;
   startFor: (deviceId: string, day: string) => string;

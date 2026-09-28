@@ -179,10 +179,18 @@ class DeviceManager:
                     row = MediaItem(device_id=device_id, filename=it.filename, kind=it.kind)
                     s.add(row)
                 row.kind = it.kind
-                row.size_bytes = it.size_bytes
-                if not row.probed:  # once probed, the file's own capture date/duration win
+                if it.size_bytes:
+                    row.size_bytes = it.size_bytes
+                if it.authoritative:
+                    # from the phone's own library index: exact, no file pull needed
                     row.duration_s = it.duration_s
                     row.created_at = it.created_at
+                    row.added_at = it.added_at
+                    row.probed = True
+                elif not row.probed:  # once probed, the file's own capture date/duration win
+                    row.duration_s = it.duration_s
+                    row.created_at = it.created_at
+                    row.added_at = it.added_at or it.created_at
                 row.present = True
                 row.last_seen = now
                 s.flush()

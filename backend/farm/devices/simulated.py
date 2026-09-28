@@ -83,6 +83,8 @@ class SimulatedDriver(Driver):
                     created_at=datetime.fromtimestamp(st.st_mtime),
                     duration_s=_probe_duration(p) if kind == "video" else 0.0,
                     size_bytes=st.st_size,
+                    added_at=datetime.fromtimestamp(st.st_mtime),
+                    authoritative=True,
                 )
             )
         items.sort(key=lambda r: r.created_at, reverse=True)

@@ -48,6 +48,7 @@ class MediaOut(ORM):
     duration_s: float
     size_bytes: int
     created_at: datetime
+    added_at: datetime | None = None
     present: bool
     has_thumb: bool = False
     index: int | None = None  # position in Recents, newest first (0-based)

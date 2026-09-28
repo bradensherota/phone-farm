@@ -115,7 +115,7 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
     rows = (
         s.query(MediaItem)
         .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True))
-        .order_by(MediaItem.created_at.desc(), MediaItem.id.desc())
+        .order_by(func.coalesce(MediaItem.added_at, MediaItem.created_at).desc(), MediaItem.id.desc())
         .all()
     )
     out = []

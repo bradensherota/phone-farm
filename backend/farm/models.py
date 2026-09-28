@@ -116,6 +116,7 @@ class MediaItem(Base):
     present: Mapped[bool] = mapped_column(Boolean, default=True)  # false once it disappears from the roll
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     probed: Mapped[bool] = mapped_column(Boolean, default=False)  # capture date/duration read from the file itself
+    added_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # when it entered the library: the gallery's sort key
 
     device: Mapped[Device] = relationship(back_populates="media")
 

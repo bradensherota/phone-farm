@@ -98,11 +98,33 @@ class Phone:
             pass
         time.sleep(0.5)
 
-    def swipe_up(self, n: int = 1) -> None:
+    def flick(self, direction: str = "up", strength: float = 1.0) -> None:
+        """Quick scroll gesture. 'up' reveals content further down the list. The instant drag
+        primitive doesn't scroll Instagram's grids at all; a fast pointer move does."""
         w, h = self.s.window_size()
+        span = int(h * 0.5 * max(0.2, min(strength, 1.0)))
+        y0, y1 = (int(h * 0.8), int(h * 0.8) - span) if direction == "up" else (int(h * 0.3), int(h * 0.3) + span)
+        acts = [
+            {"type": "pointerMove", "duration": 0, "x": w // 2, "y": y0},
+            {"type": "pointerDown", "button": 0},
+            {"type": "pointerMove", "duration": 120, "x": w // 2, "y": y1},
+            {"type": "pointerUp", "button": 0},
+        ]
+        self.c.http.post(f"/session/{self.s.session_id}/actions", {"actions": [
+            {"type": "pointer", "id": "finger1", "parameters": {"pointerType": "touch"}, "actions": acts}
+        ]})
+        time.sleep(1.3)
+
+    def swipe_up(self, n: int = 1) -> None:
         for _ in range(n):
-            self.s.swipe(w // 2, int(h * 0.75), w // 2, int(h * 0.35), 0.4)
-            time.sleep(0.9)
+            self.flick("up")
+
+    def element_name(self, e) -> str:
+        """Accessibility identifier of a found element (the client library hides it)."""
+        try:
+            return self.c.http.get(f"/session/{self.s.session_id}/element/{e.id}/attribute/name").value or ""
+        except Exception:
+            return ""
 
     def drag(self, x1: float, y1: float, x2: float, y2: float, hold_ms: int = 350, move_ms: int = 700, steps: int = 12) -> None:
         """Finger-like drag: press, hold, then move in small steps. Apps treat the instant
@@ -146,6 +168,27 @@ class Phone:
 
 # ---- Instagram building blocks ---------------------------------------------------
 
+def ig_reset(p: Phone) -> None:
+    """Get Instagram back to a tab-bar screen if a previous run left a composer or gallery open."""
+    for _ in range(3):
+        if p.exists(name="profile-tab", timeout=1.5):
+            return
+        if p.tap_if(name="discard-story-preview", what="Discard leftover story", timeout=1):
+            p.tap_if(predicate="label CONTAINS 'Discard'", what="Confirm discard", timeout=3)
+            continue
+        if p.tap_if(name="discard-reel-preview", what="Discard leftover reel", timeout=1):
+            p.tap_if(name="camera-discard-draft", what="Start over", timeout=3)
+            continue
+        if p.tap_if(name="gallery-close-button", what="Close leftover gallery", timeout=1):
+            continue
+        if p.tap_if(name="BackButton", what="Back", timeout=1):
+            continue
+        p.tap_if(name="Cancel", what="Cancel", timeout=1)
+    if not p.exists(name="profile-tab", timeout=2):
+        p.log("warn", "Instagram isn't on a tab screen; relaunching")
+        p.open(BUNDLES["instagram"])
+
+
 def ig_current_handle(p: Phone) -> str:
     """Handle of the account currently active, read from the profile tab header."""
     p.tap(name="profile-tab", what="Profile tab")
@@ -187,8 +230,13 @@ def _expected_label_parts(spec: ActionSpec) -> tuple[str | None, str | None]:
     return date_part, dur_part
 
 
-def _label_matches(label: str, date_part: str | None, dur_part: str | None) -> bool:
+def _label_matches(label: str, date_part: str | None, dur_part: str | None, kind: str | None = None) -> bool:
     lab = (label or "").upper()
+    is_video_cell = "VIDEO" in lab
+    if kind == "video" and not is_video_cell:
+        return False
+    if kind == "photo" and is_video_cell:
+        return False
     if date_part and date_part not in lab:
         return False
     if dur_part and "DURATION: " in lab:
@@ -218,11 +266,35 @@ def ig_pick_gallery_item(p: Phone, spec: ActionSpec) -> None:
     def cell(n):
         return p.el(predicate=f"name BEGINSWITH 'gallery-' AND name ENDSWITH '-cell-{n}'").wait(timeout=1.5, raise_error=False)
 
+    def visible_indices() -> list[int]:
+        out = []
+        for e in p.el(predicate="name BEGINSWITH 'gallery-' AND name CONTAINS '-cell-'").find_elements():
+            try:
+                out.append(int(p.element_name(e).rsplit("-", 1)[1]))
+            except Exception:
+                pass
+        return sorted(out)
+
     target = None
-    for _ in range(30):
+    for _ in range(40):
         e = cell(index)
+        if not e:
+            # aim the scroll: a full flick moves ~25 cells, so scale it to the distance
+            vis = visible_indices()
+            if not vis:
+                p.flick("up")
+                continue
+            if index > vis[-1]:
+                gap = index - vis[-1]
+                p.flick("up", strength=1.0 if gap > 20 else max(0.3, gap / 25))
+            elif index < vis[0]:
+                gap = vis[0] - index
+                p.flick("down", strength=1.0 if gap > 20 else max(0.3, gap / 25))
+            else:
+                p.flick("up", strength=0.3)  # should be visible but isn't instantiated yet; nudge
+            continue
         if e:
-            if _label_matches(e.label, date_part, dur_part):
+            if _label_matches(e.label, date_part, dur_part, spec.media_kind):
                 target = e
                 break
             p.log("warn", f"Recents #{index + 1} is '{e.label}', not the planned item; checking neighbours")
@@ -232,7 +304,7 @@ def ig_pick_gallery_item(p: Phone, spec: ActionSpec) -> None:
                 if n < 0:
                     continue
                 c = cell(n)
-                if c and _label_matches(c.label, date_part, dur_part):
+                if c and _label_matches(c.label, date_part, dur_part, spec.media_kind):
                     p.log("info", f"Using Recents #{n + 1} instead: {c.label}")
                     target = c
                     break
@@ -316,6 +388,7 @@ def ig_story(p: Phone, spec: ActionSpec):
     if spec.media_index is None:
         raise FlowError("No media chosen")
     p.open(BUNDLES["instagram"])
+    ig_reset(p)
     ig_ensure_account(p, spec.handle)
     p.tap(name="mainfeed-tab", what="Home tab")
     p.tap(name="story-tray-add-button", what="Add to your story")
@@ -335,6 +408,7 @@ def ig_reel(p: Phone, spec: ActionSpec):
     if spec.media_index is None:
         raise FlowError("No media chosen")
     p.open(BUNDLES["instagram"])
+    ig_reset(p)
     ig_ensure_account(p, spec.handle)
     p.tap(name="profile-add-button", what="Create (+)")
     p.tap(name="creation-reel", what="Reel")

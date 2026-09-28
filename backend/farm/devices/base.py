@@ -16,9 +16,11 @@ from typing import Callable
 class RollItem:
     filename: str
     kind: str  # "photo" | "video"
-    created_at: datetime
+    created_at: datetime  # capture date (what the gallery shows on the cell)
     duration_s: float = 0.0
     size_bytes: int = 0
+    added_at: datetime | None = None  # when it entered the library (the gallery's sort order)
+    authoritative: bool = False  # True when these fields came from the library index, not file stats
 
 
 @dataclass

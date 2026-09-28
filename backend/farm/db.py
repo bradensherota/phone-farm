@@ -38,6 +38,7 @@ def init_db() -> None:
 # Tiny additive migrations for columns added after a table already existed.
 _ADDED_COLUMNS = [
     ("media", "probed", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("media", "added_at", "DATETIME"),
 ]
 
 

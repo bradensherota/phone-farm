@@ -239,10 +239,11 @@ class Runner:
 
 def _media_index(s: Session, device_id: str, media: MediaItem) -> int | None:
     """0-based position of this file in the phone's Recents grid (newest first)."""
+    from sqlalchemy import func
     rows = (
         s.query(MediaItem.id)
         .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True))
-        .order_by(MediaItem.created_at.desc(), MediaItem.id.desc())
+        .order_by(func.coalesce(MediaItem.added_at, MediaItem.created_at).desc(), MediaItem.id.desc())
         .all()
     )
     for i, (mid,) in enumerate(rows):

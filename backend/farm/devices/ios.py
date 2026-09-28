@@ -199,6 +199,62 @@ class IOSDriver(Driver):
         return asyncio.run(go())
 
     def list_camera_roll(self) -> list[RollItem]:
+        """Read the phone's Photos library index (Photos.sqlite over AFC, read-only).
+
+        This is authoritative: capture date, duration, kind, and the date-added order that
+        Instagram's Recents grid uses. Falls back to walking /DCIM if the index can't be read.
+        """
+        try:
+            items = self._list_from_photos_db()
+            if items:
+                return items
+        except Exception as e:
+            log.warning("%s: Photos index unreadable (%s); falling back to /DCIM listing", self.name, e)
+        return self._list_from_dcim()
+
+    def _list_from_photos_db(self) -> list[RollItem]:
+        import sqlite3
+
+        async def pull(afc):
+            out = {}
+            for f in ("Photos.sqlite", "Photos.sqlite-wal", "Photos.sqlite-shm"):
+                try:
+                    out[f] = await afc.get_file_contents(f"/PhotoData/{f}")
+                except Exception:
+                    if f == "Photos.sqlite":
+                        raise
+            return out
+
+        files = self._afc(pull)
+        with tempfile.TemporaryDirectory() as td:
+            for name, data in files.items():
+                (Path(td) / name).write_bytes(data)
+            db = sqlite3.connect(f"file:{Path(td) / 'Photos.sqlite'}?mode=ro", uri=True)
+            try:
+                rows = db.execute(
+                    "SELECT ZDIRECTORY, ZFILENAME, ZKIND, ZDURATION, ZDATECREATED, ZADDEDDATE "
+                    "FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 AND ZFILENAME IS NOT NULL "
+                    "ORDER BY ZADDEDDATE DESC"
+                ).fetchall()
+            finally:
+                db.close()
+        items: list[RollItem] = []
+        for directory, fname, zkind, dur, created, added in rows:
+            if not directory or not directory.startswith("DCIM/"):
+                continue
+            ext = Path(fname).suffix.lower()
+            kind = "video" if zkind == 1 or ext in VIDEO_EXT else "photo"
+            items.append(RollItem(
+                filename=f"{directory[len('DCIM/'):]}/{fname}",
+                kind=kind,
+                created_at=_coredata_ts(created) or datetime.now(),
+                duration_s=round(float(dur or 0), 1),
+                added_at=_coredata_ts(added),
+                authoritative=True,
+            ))
+        return items
+
+    def _list_from_dcim(self) -> list[RollItem]:
         async def go(afc):
             items: list[RollItem] = []
             for album in await afc.listdir("/DCIM"):
@@ -219,6 +275,7 @@ class IOSDriver(Driver):
                     items.append(RollItem(
                         filename=f"{album}/{name}", kind=kind,
                         created_at=created, size_bytes=int(st.get("st_size", 0) or 0),
+                        added_at=created,
                     ))
             items.sort(key=lambda r: r.created_at, reverse=True)
             return items
@@ -276,6 +333,18 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             return ActionResult(False, f"{type(e).__name__}: {e}", shot)
+
+
+def _coredata_ts(value) -> datetime | None:
+    """Core Data stores seconds since 2001-01-01 UTC; return local naive datetime."""
+    if value is None:
+        return None
+    try:
+        from datetime import timezone
+        dt = datetime.fromtimestamp(float(value) + 978307200, tz=timezone.utc)
+        return dt.astimezone().replace(tzinfo=None)
+    except Exception:
+        return None
 
 
 def _probe_media(local: Path) -> dict:

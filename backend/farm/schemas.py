@@ -77,6 +77,7 @@ class DeviceOut(ORM):
     story_album: str = "Stories"
     queue_album: str = "Farm Queue"
     prepare_lead_min: int = 60
+    has_passcode: bool = False
     connected: bool = False
     connecting: bool = False
     error: str = ""
@@ -97,6 +98,7 @@ class DevicePatch(BaseModel):
     story_album: str | None = None
     queue_album: str | None = None
     prepare_lead_min: int | None = None
+    passcode: str | None = None
 
 
 # ---- jobs ------------------------------------------------------------------

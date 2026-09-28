@@ -41,6 +41,7 @@ export interface Device {
   story_album: string;
   queue_album: string;
   prepare_lead_min: number;
+  has_passcode: boolean;
   connected: boolean;
   connecting: boolean;
   error: string;
@@ -148,7 +149,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   devices: () => req<Device[]>("/devices"),
   device: (id: string) => req<Device>(`/devices/${id}`),
-  patchDevice: (id: string, body: Partial<Device>) =>
+  patchDevice: (id: string, body: Partial<Device> & { passcode?: string }) =>
     req<Device>(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   syncDevice: (id: string) => req<Media[]>(`/devices/${id}/sync`, { method: "POST" }),
   discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),

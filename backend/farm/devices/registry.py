@@ -113,6 +113,7 @@ class DeviceManager:
                     drv: Driver = SimulatedDriver(dev.id, dev.name, settings_mod.get_all)
                 else:
                     drv = IOSDriver(dev.id, dev.name, wda_port=WDA_BASE_PORT + 1 + dev.sort_order)
+                    drv.passcode = dev.passcode or ""
                 self._drivers[dev.id] = drv
             if connect:
                 self.connect_async(dev.id)

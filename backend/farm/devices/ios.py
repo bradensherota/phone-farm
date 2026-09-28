@@ -178,7 +178,7 @@ class IOSDriver(Driver):
             return False
 
     def wake(self) -> None:
-        """Wake and unlock the phone (no passcode on farm phones): home button, then a swipe up."""
+        """Wake and unlock the phone: home button, swipe up, and the passcode if one is set."""
         try:
             if not self.is_locked():
                 return
@@ -188,20 +188,59 @@ class IOSDriver(Driver):
             if not self.is_locked():
                 return
             sid = self._post("/session", {"capabilities": {}}, timeout=20).get("sessionId")
-            acts = [{"type": "pointerMove", "duration": 0, "x": 195, "y": 830}, {"type": "pointerDown", "button": 0},
-                    {"type": "pointerMove", "duration": 250, "x": 195, "y": 300}, {"type": "pointerUp", "button": 0}]
+            try:
+                size = self._get(f"/session/{sid}/window/size", timeout=10).get("value") or {}
+                w, h = float(size.get("width") or 390), float(size.get("height") or 844)
+            except Exception:
+                w, h = 390.0, 844.0
+            acts = [{"type": "pointerMove", "duration": 0, "x": int(w / 2), "y": int(h * 0.98)}, {"type": "pointerDown", "button": 0},
+                    {"type": "pointerMove", "duration": 250, "x": int(w / 2), "y": int(h * 0.35)}, {"type": "pointerUp", "button": 0}]
             self._post(f"/session/{sid}/actions", {"actions": [{"type": "pointer", "id": "f1", "parameters": {"pointerType": "touch"}, "actions": acts}]}, timeout=15)
             time.sleep(1.5)
             try:
                 urllib.request.urlopen(urllib.request.Request(f"{self.base}/session/{sid}/actions", method="DELETE"), timeout=10).read()
             except Exception:
                 pass
+            if self.is_locked() and getattr(self, "passcode", ""):
+                self._type_passcode()
             if self.is_locked():
                 self._post("/wda/unlock", timeout=25)
             if self.is_locked():
                 log.warning("%s: still locked after wake attempts (passcode set?)", self.name)
         except Exception as e:
             log.warning("%s: wake failed: %s", self.name, e)
+
+    def _type_passcode(self) -> None:
+        """Type the lock-screen passcode by reading the keypad digits off a screenshot and
+        tapping them. The code comes from the phone's settings in the local database."""
+        from .ios_blind import BlindPhone
+        code = getattr(self, "passcode", "") or ""
+        bp = BlindPhone(self.base, lambda level, msg: log.info("%s: %s", self.name, msg))
+        try:
+            keys = {}
+            for _ in range(2):
+                words = bp.read()
+                for wd in words:
+                    t = wd.text.strip()
+                    if len(t) == 1 and t.isdigit() and wd.cy > bp.pt_h * 0.3:
+                        keys.setdefault(t, wd)
+                if len(keys) >= 10:
+                    break
+                time.sleep(1.0)
+            if len(keys) < 10:
+                log.warning("%s: keypad not visible (found %d digits); cannot type passcode", self.name, len(keys))
+                return
+            log.info("%s: typing passcode (%d digits)", self.name, len(code))
+            for ch in code:
+                k = keys.get(ch)
+                if k is None:
+                    log.warning("%s: digit not on keypad", self.name)
+                    return
+                bp.s.tap(int(k.cx), int(k.cy))
+                time.sleep(0.3)
+            time.sleep(2.0)
+        finally:
+            bp.release()
 
     def sleep(self) -> None:
         """Lock the screen so the phone can rest between routines. The runner keeps working while locked."""

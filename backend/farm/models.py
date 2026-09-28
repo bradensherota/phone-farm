@@ -77,6 +77,7 @@ class Device(Base):
     story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it
     queue_album: Mapped[str] = mapped_column(String, default="Farm Queue")  # album the app fills with scheduled items and empties after posting
     prepare_lead_min: Mapped[int] = mapped_column(Integer, default=60)  # fill the queue album this many minutes before the routine
+    passcode: Mapped[str] = mapped_column(String, default="")  # lock-screen passcode, typed by the runner to wake the phone (local DB only)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     accounts: Mapped[list[Account]] = relationship(

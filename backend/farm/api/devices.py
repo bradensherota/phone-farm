@@ -35,6 +35,7 @@ def device_out(s: Session, d: Device) -> DeviceOut:
     media_count = s.query(func.count(MediaItem.id)).filter(MediaItem.device_id == d.id, MediaItem.present.is_(True)).scalar()
     out = DeviceOut.model_validate(d)
     out.connected = bool(info.get("connected"))
+    out.has_passcode = bool(d.passcode)
     out.connecting = bool(info.get("connecting"))
     out.error = str(info.get("error") or "")
     out.busy = d.id in runner.busy
@@ -144,6 +145,9 @@ def patch_device(device_id: str, body: DevicePatch, s: Session = Depends(get_ses
         setattr(d, k, v)
     s.commit()
     s.refresh(d)
+    drv = manager.driver(device_id)
+    if drv is not None and hasattr(drv, "passcode"):
+        drv.passcode = d.passcode or ""
     return device_out(s, d)
 
 

@@ -70,6 +70,31 @@ def connect_device(device_id: str, s: Session = Depends(get_session)):
     return device_out(s, d)
 
 
+@router.post("/{device_id}/run-day")
+def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
+    """Start this phone's whole queue for `run_date` now: every job that hasn't posted yet
+    (scheduled, failed or cancelled) is re-armed in order and the worker is kicked."""
+    if s.get(Device, device_id) is None:
+        raise HTTPException(404, "device not found")
+    from datetime import datetime
+    jobs = (
+        s.query(Job)
+        .filter(Job.device_id == device_id, Job.run_date == run_date,
+                Job.status.in_([JobStatus.scheduled, JobStatus.failed, JobStatus.cancelled]))
+        .order_by(Job.sort_order, Job.id)
+        .all()
+    )
+    now = datetime.now()
+    for j in jobs:
+        j.status = JobStatus.scheduled
+        j.attempts = 0
+        j.last_error = ""
+        j.run_at = now
+    s.commit()
+    runner.kick(device_id)
+    return {"started": len(jobs)}
+
+
 @router.post("/{device_id}/wake")
 def wake_device(device_id: str):
     drv = manager.driver(device_id)

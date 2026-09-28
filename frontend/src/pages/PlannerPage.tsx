@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Account, Device, Job } from "../lib/api";
 import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, TIME_SLOTS, ymd } from "../lib/api";
 import type { DayStart } from "../lib/api";
-import { Pill, PlatformIcon, StatusDot, usePoll } from "../components/common";
+import { Pill, PlatformIcon, StatusDot, usePoll, useToast } from "../components/common";
 import PlanDrawer from "../components/PlanDrawer";
 
 export default function PlannerPage() {
@@ -18,6 +18,12 @@ export default function PlannerPage() {
   const startFor = (deviceId: string, day: string) => (starts || []).find((x: DayStart) => x.device_id === deviceId && x.run_date === day)?.start || "";
   const setStart = async (deviceId: string, day: string, value: string) => { await scheduleApi.put(deviceId, day, value); reloadStarts(); };
   const [sel, setSel] = useState<{ account: Account; device: Device; date: string } | null>(null);
+  const toast = useToast();
+  const runDay = async (device: Device, day: string, count: number) => {
+    if (!confirm(`Start ${device.name}'s whole queue for ${day} now? ${count} action(s) will run in order, real posts.`)) return;
+    try { const r = await api.runDay(device.id, day); toast(`Started ${r.started} action(s) on ${device.name}`); reload(); }
+    catch (e: any) { toast(e.message, "err"); }
+  };
 
   const byCell = useMemo(() => {
     const m = new Map<string, Job[]>();
@@ -61,7 +67,7 @@ export default function PlannerPage() {
           </thead>
           <tbody>
             {(devices || []).map((dev) => (
-              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} />
+              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} runDay={runDay} />
             ))}
           </tbody>
         </table>
@@ -87,6 +93,7 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart }:
   onPick: (a: Account, date: string) => void;
   startFor: (deviceId: string, day: string) => string;
   setStart: (deviceId: string, day: string, value: string) => Promise<void>;
+  runDay: (device: Device, day: string, count: number) => Promise<void>;
 }) {
   const accounts = device.accounts.filter((a) => a.status !== "banned");
   return (
@@ -100,12 +107,16 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart }:
         {days.map((d) => {
           const k = ymd(d);
           const v = startFor(device.id, k);
+          const pending = accounts.reduce((n, a) => n + (byCell.get(`${a.id}:${k}`) || []).filter((j) => j.status !== "done" && j.status !== "running").length, 0);
           return (
             <td key={k} className="start-cell">
               <select className={`start-select ${v ? "set" : ""}`} value={v} title="When this phone's queue starts on this day. Jobs run down the column, one account after another." onChange={(e) => setStart(device.id, k, e.target.value)}>
                 <option value="">{fmtHHMM(device.routine_start)} (default)</option>
                 {TIME_SLOTS.map(([hhmm, label]) => <option key={hhmm} value={hhmm}>{label}</option>)}
               </select>
+              {pending > 0 && device.kind !== "sim" && (
+                <button className="btn sm run-day" title="Start this day's whole queue on this phone right now (wake, fill the queue album, then post in order)" onClick={() => runDay(device, k, pending)}>▶ Run day ({pending})</button>
+              )}
             </td>
           );
         })}

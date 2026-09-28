@@ -253,6 +253,14 @@ class Runner:
                 job.last_stage = ""
             job.run_stage, job.run_mode = "", ""
             from_start = not stage_only and not stage_from
+        # the runner must be up before anything else: the album check reads the phone
+        if drv is not None and not drv.is_connected():
+            with session_scope() as s:
+                s.add(JobLog(job_id=job_id, level="warn", message="Phone's runner isn't answering; restarting it"))
+            try:
+                drv.connect()
+            except Exception as e:
+                log.warning("%s: runner restart failed: %s", device_id, e)
         if drv is not None and hasattr(drv, "wake") and drv.is_connected():
             drv.wake()  # wake and unlock before anything touches the screen
         auto_album = settings_mod.as_bool(settings_mod.get("queue_auto", "false"))
@@ -329,13 +337,6 @@ class Runner:
         how = f"stage '{stage_only}' only" if stage_only else (f"from stage '{stage_from}'" if stage_from else "all stages")
         jlog("info", f"Attempt {attempt}: {spec.action} as @{spec.handle} ({how})")
 
-        if drv is not None and not drv.is_connected():
-            jlog("warn", "Phone's runner isn't answering; restarting it")
-            try:
-                drv.connect()
-            except Exception as e:
-                self._finish(job_id, ok=False, message=f"Phone offline: {e}", shot=None, attempt=attempt)
-                return
         if drv is None or not drv.is_connected():
             self._finish(job_id, ok=False, message="Phone offline", shot=None, attempt=attempt)
             return

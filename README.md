@@ -150,4 +150,7 @@ runner presses the side button through a HID event instead. The Sleep and Wake b
 the phone page run exactly the steps the runner takes after the last job and before the first.
 The **Wake test** card on the phone page locks the phone, then wakes and re-locks it after each
 interval you give (default 15, 30, 60, 180 minutes), logging every step, to prove the runner
-survives long locked stretches before trusting an overnight schedule.
+survives long locked stretches before trusting an overnight schedule. The phone's runner
+leaks a connection per request when the phone is locked, so the app never asks it for
+screenshots while locked and polls the screen only while the page is visible. Leave the phone
+page closed overnight anyway; less traffic to the phone is always safer.

@@ -115,17 +115,16 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
     st = _find_sticker(bp, label)
     if st is None:
         raise FlowError("Link sticker not visible after Done")
-    last_w = st.w
-    for i in range(5):
+    # one wide spread saturates TikTok's cap; a second only if it came out unusually small
+    for i in range(2):
         _spread(bp, st.cx, st.cy)
         st2 = _find_sticker(bp, label)
         if st2 is None:
             break
-        bp.log("info", f"Sticker width {st2.w:.0f}pt")
-        if st2.w <= last_w + 4:
-            st = st2
+        st = st2
+        bp.log("info", f"Sticker width {st.w:.0f}pt")
+        if st.w >= W * 0.7:
             break
-        last_w, st = st2.w, st2
     tx, ty = W / 2, H * STORY_STICKER_Y_FRAC
     for _ in range(3):
         st = _find_sticker(bp, label) or st

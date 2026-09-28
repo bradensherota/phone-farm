@@ -18,11 +18,44 @@ import subprocess, tempfile
 router = APIRouter(tags=["misc"])
 
 
+import threading, hashlib
+from ..config import THUMB_DIR
+_thumb_locks: dict[int, threading.Lock] = {}
+_thumb_locks_guard = threading.Lock()
+
+
 @router.get("/media/{media_id}/thumb.jpg")
 def thumb(media_id: int, s: Session = Depends(get_session)):
+    """Thumbnail; made on demand (pulled from the phone) if the background sync hasn't got to it."""
     m = s.get(MediaItem, media_id)
-    if m is None or not m.thumb_path or not Path(m.thumb_path).exists():
-        raise HTTPException(404, "no thumbnail")
+    if m is None:
+        raise HTTPException(404, "no such media")
+    if m.thumb_path and Path(m.thumb_path).exists():
+        return FileResponse(m.thumb_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    with _thumb_locks_guard:
+        lock = _thumb_locks.setdefault(media_id, threading.Lock())
+    with lock:
+        s.refresh(m)
+        if not (m.thumb_path and Path(m.thumb_path).exists()):
+            drv = manager.driver(m.device_id)
+            if drv is None or not drv.is_connected():
+                raise HTTPException(404, "phone not connected")
+            out_dir = THUMB_DIR / m.device_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            key = hashlib.sha1(f"{m.device_id}:{m.filename}".encode()).hexdigest()[:16]
+            out = out_dir / f"{key}.jpg"
+            if not out.exists():
+                data = drv.thumbnail(m.filename)
+                if not data:
+                    raise HTTPException(404, "could not make a thumbnail")
+                out.write_bytes(data)
+            m.thumb_path = str(out)
+            meta = drv.media_meta(m.filename) if not m.probed else None
+            if meta:
+                if meta.get("duration_s"):
+                    m.duration_s = float(meta["duration_s"])
+                m.probed = True
+            s.commit()
     return FileResponse(m.thumb_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 

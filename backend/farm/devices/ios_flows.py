@@ -350,10 +350,10 @@ def ig_reel(p: Phone, spec: ActionSpec):
     if spec.caption:
         p.tap(name="caption-cell-text-view", what="caption")
         p.type(spec.caption, "caption")
-        p.dismiss_keyboard()
-        if p.exists(name="caption-cell-text-view", timeout=2) and not p.exists(name="share-sheet-share-button", timeout=2):
-            p.tap(label="New reel", what="title (dismiss keyboard)")
-    p.tap(name="share-sheet-share-button", what="Share", pause=3)
+        # The caption opens a full-screen editor; its checkmark is the "OK" button.
+        if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
+            p.dismiss_keyboard()
+    p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=3)
     # Instagram returns to the feed/profile while it uploads in the background
     for _ in range(30):
         if p.exists(name="mainfeed-tab", timeout=1) or p.exists(name="profile-tab", timeout=1):

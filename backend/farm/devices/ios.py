@@ -118,6 +118,7 @@ class IOSDriver(Driver):
             while time.time() < deadline:
                 if self._status_ok():
                     log.info("%s: WebDriverAgent up on port %d", self.name, self.wda_port)
+                    self._new_standby_session()
                     return
                 if self._xcodebuild.poll() is not None:
                     raise RuntimeError(f"xcodebuild exited early (see {self._log_path})")
@@ -177,77 +178,124 @@ class IOSDriver(Driver):
         except Exception:
             return False
 
+    # ---- wake / sleep ----------------------------------------------------
+    # WebDriverAgent refuses to open a session while the screen is locked, so we keep a
+    # "standby" session open from before the lock and drive the wake through it.
+    def _new_standby_session(self) -> str | None:
+        try:
+            if self.is_locked():
+                return self._standby_sid
+            self._standby_sid = self._post("/session", {"capabilities": {}}, timeout=25).get("sessionId")
+            self._post(f"/session/{self._standby_sid}/appium/settings",
+                       {"settings": {"snapshotMaxDepth": 2, "customSnapshotTimeout": 5, "waitForIdleTimeout": 0}}, timeout=10)
+        except Exception as e:
+            log.warning("%s: standby session failed: %s", self.name, e)
+        return getattr(self, "_standby_sid", None)
+
+    def _sid(self) -> str | None:
+        sid = getattr(self, "_standby_sid", None)
+        if sid:
+            try:
+                self._get(f"/session/{sid}/window/size", timeout=8)
+                return sid
+            except Exception:
+                pass
+        return self._new_standby_session()
+
+    def _actions(self, sid: str, acts: list, timeout: float = 20) -> None:
+        self._post(f"/session/{sid}/actions", {"actions": [{"type": "pointer", "id": "f1", "parameters": {"pointerType": "touch"}, "actions": acts}]}, timeout=timeout)
+        try:
+            urllib.request.urlopen(urllib.request.Request(f"{self.base}/session/{sid}/actions", method="DELETE"), timeout=10).read()
+        except Exception:
+            pass
+
+    def _tap(self, sid: str, x: float, y: float) -> None:
+        self._actions(sid, [{"type": "pointerMove", "duration": 0, "x": int(x), "y": int(y)}, {"type": "pointerDown", "button": 0},
+                            {"type": "pause", "duration": 60}, {"type": "pointerUp", "button": 0}])
+
     def wake(self) -> None:
         """Wake and unlock the phone: home button, swipe up, and the passcode if one is set."""
         try:
             if not self.is_locked():
+                self._new_standby_session()
                 return
             log.info("%s: waking", self.name)
-            self._post("/wda/pressButton", {"name": "home"}, timeout=10)
+            sid = self._sid()
+            if not sid:
+                log.warning("%s: no standby session; can't wake a locked phone (unlock it once by hand)", self.name)
+                return
+            self._post(f"/session/{sid}/wda/pressButton", {"name": "home"}, timeout=10)
             time.sleep(1.2)
             if not self.is_locked():
                 return
-            sid = self._post("/session", {"capabilities": {}}, timeout=20).get("sessionId")
             try:
                 size = self._get(f"/session/{sid}/window/size", timeout=10).get("value") or {}
                 w, h = float(size.get("width") or 390), float(size.get("height") or 844)
             except Exception:
                 w, h = 390.0, 844.0
-            acts = [{"type": "pointerMove", "duration": 0, "x": int(w / 2), "y": int(h * 0.98)}, {"type": "pointerDown", "button": 0},
-                    {"type": "pointerMove", "duration": 250, "x": int(w / 2), "y": int(h * 0.35)}, {"type": "pointerUp", "button": 0}]
-            self._post(f"/session/{sid}/actions", {"actions": [{"type": "pointer", "id": "f1", "parameters": {"pointerType": "touch"}, "actions": acts}]}, timeout=15)
+            self._actions(sid, [{"type": "pointerMove", "duration": 0, "x": int(w / 2), "y": int(h * 0.98)}, {"type": "pointerDown", "button": 0},
+                                {"type": "pointerMove", "duration": 250, "x": int(w / 2), "y": int(h * 0.35)}, {"type": "pointerUp", "button": 0}])
             time.sleep(1.5)
-            try:
-                urllib.request.urlopen(urllib.request.Request(f"{self.base}/session/{sid}/actions", method="DELETE"), timeout=10).read()
-            except Exception:
-                pass
             if self.is_locked() and getattr(self, "passcode", ""):
-                self._type_passcode()
+                self._type_passcode(sid, w, h)
             if self.is_locked():
-                self._post("/wda/unlock", timeout=25)
-            if self.is_locked():
-                log.warning("%s: still locked after wake attempts (passcode set?)", self.name)
+                log.warning("%s: still locked after wake attempts", self.name)
+            else:
+                self._new_standby_session()
         except Exception as e:
             log.warning("%s: wake failed: %s", self.name, e)
 
-    def _type_passcode(self) -> None:
-        """Type the lock-screen passcode by reading the keypad digits off a screenshot and
-        tapping them. The code comes from the phone's settings in the local database."""
-        from .ios_blind import BlindPhone
+    def _type_passcode(self, sid: str, w: float, h: float) -> None:
+        """Type the lock-screen passcode: read the keypad digits off a screenshot (local OCR)
+        and tap them through the standby session. The code lives only in the local database."""
+        import base64, json as _json, subprocess as _sp, tempfile as _tf
+        from pathlib import Path as _P
         code = getattr(self, "passcode", "") or ""
-        bp = BlindPhone(self.base, lambda level, msg: log.info("%s: %s", self.name, msg))
-        try:
-            keys = {}
-            for _ in range(2):
-                words = bp.read()
-                for wd in words:
-                    t = wd.text.strip()
-                    if len(t) == 1 and t.isdigit() and wd.cy > bp.pt_h * 0.3:
-                        keys.setdefault(t, wd)
-                if len(keys) >= 10:
-                    break
+        ocr = _P.home() / "PhoneFarm" / "ocr"
+        keys: dict[str, tuple[float, float]] = {}
+        for _ in range(3):
+            png = base64.b64decode(self._get("/screenshot", timeout=20)["value"])
+            with _tf.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                f.write(png)
+                path = f.name
+            try:
+                words = _json.loads(_sp.run([str(ocr), path], capture_output=True, timeout=30).stdout or b"[]")
+            finally:
+                _P(path).unlink(missing_ok=True)
+            if not words:
                 time.sleep(1.0)
-            if len(keys) < 10:
-                log.warning("%s: keypad not visible (found %d digits); cannot type passcode", self.name, len(keys))
+                continue
+            from PIL import Image
+            import io as _io
+            scale = Image.open(_io.BytesIO(png)).width / w
+            for wd in words:
+                t = wd["text"].strip()
+                if len(t) == 1 and t.isdigit() and (wd["y"] / scale) > h * 0.3:
+                    keys.setdefault(t, ((wd["x"] + wd["w"] / 2) / scale, (wd["y"] + wd["h"] / 2) / scale))
+            if len(keys) >= 10:
+                break
+            time.sleep(1.0)
+        if len(keys) < 10:
+            log.warning("%s: keypad not visible (found %d digits); cannot type passcode", self.name, len(keys))
+            return
+        log.info("%s: typing passcode (%d digits)", self.name, len(code))
+        for ch in code:
+            k = keys.get(ch)
+            if k is None:
+                log.warning("%s: digit not on keypad", self.name)
                 return
-            log.info("%s: typing passcode (%d digits)", self.name, len(code))
-            for ch in code:
-                k = keys.get(ch)
-                if k is None:
-                    log.warning("%s: digit not on keypad", self.name)
-                    return
-                bp.s.tap(int(k.cx), int(k.cy))
-                time.sleep(0.3)
-            time.sleep(2.0)
-        finally:
-            bp.release()
+            self._tap(sid, *k)
+            time.sleep(0.3)
+        time.sleep(2.5)
 
     def sleep(self) -> None:
-        """Lock the screen so the phone can rest between routines. The runner keeps working while locked."""
+        """Lock the screen so the phone can rest between routines. A fresh standby session is
+        opened first so the next wake can drive the lock screen."""
         try:
             if not self.is_locked():
+                self._new_standby_session()
                 log.info("%s: locking screen", self.name)
-                self._post("/wda/lock", timeout=10)
+                self._post("/wda/lock", timeout=15)
         except Exception as e:
             log.warning("%s: lock failed: %s", self.name, e)
 
@@ -407,6 +455,7 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             phone.close()
+            self._new_standby_session()
 
     def remove_from_album(self, item, album: str, log_fn: LogFn) -> bool:
         from . import ios_flows, ios_photos
@@ -420,6 +469,7 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             phone.close()
+            self._new_standby_session()
 
     def clear_album(self, album: str, log_fn: LogFn) -> bool:
         from . import ios_flows, ios_photos
@@ -433,13 +483,16 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             phone.close()
+            self._new_standby_session()
 
     # ---- actions ---------------------------------------------------------
     def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:
         from . import ios_flows
         self.wake()
         try:
-            return ios_flows.run(self, spec, log_fn)
+            result = ios_flows.run(self, spec, log_fn)
+            self._new_standby_session()
+            return result
         except Exception as e:
             log.exception("%s: flow failed", self.name)
             shot = None

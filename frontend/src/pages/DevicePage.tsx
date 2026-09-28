@@ -93,6 +93,12 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         {device.kind === "ios" && !device.connected && (
           <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button></div>
         )}
+        {device.kind === "ios" && device.connected && (
+          <div className="field"><label>Screen</label><div className="row">
+            <button className="btn sm" onClick={async () => { const r = await api.sleepDevice(device.id); toast(r.locked ? "Locked" : "Could not lock", r.locked ? "ok" : "err"); }}>Lock now</button>
+            <button className="btn sm" onClick={async () => { toast("Waking…"); const r = await api.wakeDevice(device.id); toast(r.locked ? "Still locked" : "Awake and unlocked", r.locked ? "err" : "ok"); }}>Wake</button>
+          </div></div>
+        )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
         <div className="field"><label>Queue album</label><div className="row"><input className="input" style={{ width: 120 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Album the app fills with scheduled items and empties after posting" /><input className="input" type="number" style={{ width: 70 }} value={form.prepare_lead_min} onChange={(e) => setForm({ ...form, prepare_lead_min: +e.target.value })} title="Minutes before the routine to fill it" /><span className="dim small">min before</span></div></div>
         <div className="field"><label>&nbsp;</label><button className="btn" disabled={preparing || device.kind === "sim"} onClick={prepare}>{preparing ? "Preparing…" : "Prepare album now"}</button></div>

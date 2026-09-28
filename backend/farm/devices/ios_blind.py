@@ -188,42 +188,51 @@ class BlindPhone:
 DUR_RX = re.compile(r"^\d\d:\d\d$")
 
 
-def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, want_secs: float | None, kind: str) -> tuple[float, float]:
-    """Cell center for the item `from_end` places before the newest, using the duration
-    overlays as the lattice reference (3 columns, oldest first, ending at the newest)."""
-    overlays = [w for w in words if DUR_RX.match(w.text.strip())]
-    if not overlays:
-        raise FlowError("No duration overlays visible in TikTok's grid (album needs at least one video)")
+def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, want_secs: float | None, kind: str, lead_tiles: int = 0) -> tuple[float, float]:
+    """Cell centre for the item `from_end` places before the newest (3 columns, oldest first,
+    ending at the newest). Position is authoritative; the duration overlay, when readable,
+    is only a cross-check that stops the run on a clear contradiction."""
     cols, cell_w = 3, bp.pt_w / 3
-    # rows: cluster overlays by their bottom y
-    bottoms = sorted({round(w.y + w.h) for w in overlays})
-    rows = []
-    for b in bottoms:
-        if not rows or b - rows[-1] > 20:
-            rows.append(b)
-    pitch = min(b - a for a, b in zip(rows, rows[1:])) if len(rows) > 1 else cell_w * 0.79
-    last_index = count - 1
+    overlays = [w for w in words if DUR_RX.match(w.text.strip())]
+    if overlays:
+        bottoms = sorted({round(w.y + w.h) for w in overlays})
+        rows = []
+        for b in bottoms:
+            if not rows or b - rows[-1] > 20:
+                rows.append(b)
+        pitch = min(b - a for a, b in zip(rows, rows[1:])) if len(rows) > 1 else cell_w * 0.79
+        bottom = rows[-1] + 6
+        last_row_bottom = bottom
+    else:
+        # no readable overlays (all photos, or a single tile): grid starts just below the tab row
+        tabs = bp.find(r"^(Favorites|Videos|Photos|All)$", words)
+        if tabs is None:
+            raise FlowError("Can't locate TikTok's grid (no duration overlays and no tab row)")
+        pitch = cell_w  # story/post grids are square tiles
+        top = tabs.y + tabs.h + 12
+        last_row_bottom = top + pitch * (((count - 1 + lead_tiles) // cols) + 1)
+        bottom = last_row_bottom
+    # lead_tiles: non-media tiles at the start of the grid (the story gallery has a camera tile first)
+    last_index = count - 1 + lead_tiles
     target = last_index - from_end
-    if target < 0:
+    if target < lead_tiles:
         raise FlowError("Item position is before the start of the album")
     rows_up = last_index // cols - target // cols
     col = target % cols
-    bottom = rows[-1] + 6  # overlay sits a few points above the cell's bottom edge
     cy = bottom - rows_up * pitch - pitch / 2
     cx = col * cell_w + cell_w / 2
     here = [w for w in overlays if abs(w.cy - (cy + pitch / 2 - 12)) < pitch / 2 and abs(w.cx - (cx + cell_w / 2 - 22)) < cell_w / 2]
-    if kind == "video":
-        if not here:
-            raise FlowError(f"Cell {from_end + 1} from the end shows no duration; expected a video")
-        if want_secs:
-            got = int(here[0].text[:2]) * 60 + int(here[0].text[3:5])
-            if abs(got - int(want_secs)) > 1:
-                raise FlowError(f"Cell {from_end + 1} from the end is {here[0].text}, expected ~{int(want_secs)}s; re-sync the album and re-plan")
-    elif here:
+    if here and kind == "video" and want_secs:
+        got = int(here[0].text[:2]) * 60 + int(here[0].text[3:5])
+        if abs(got - int(want_secs)) > 1:
+            raise FlowError(f"Cell {from_end + 1} from the end is {here[0].text}, expected ~{int(want_secs)}s; re-sync the album and re-plan")
+    if here and kind == "photo":
         raise FlowError(f"Cell {from_end + 1} from the end is a video ({here[0].text}) but a photo was planned")
-    if cy < 90:
+    if not here and kind == "video":
+        bp.log("warn", "No duration overlay readable on the target cell; trusting the position")
+    if cy < 90 or cy > bp.pt_h - 60:
         raise FlowError("Planned item is scrolled out of view; keep the queue album short")
-    bp.log("info", f"TikTok: cell {from_end + 1} from the end" + (f" ({here[0].text})" if here else " (photo)"))
+    bp.log("info", f"TikTok: cell {from_end + 1} from the end" + (f" ({here[0].text})" if here else ""))
     return cx, cy
 
 
@@ -246,6 +255,38 @@ def tt_dismiss_prompt(bp: BlindPhone, words: list[Word]) -> bool:
         bp.tap(bp.pt_w - 53, max(top + 40, 120), "sheet X", pause=1.5)
         return True
     return False
+
+
+LIST_MARKERS = r"^(Recently Saved|Recently Added)$"  # only ever shown inside the album list, never as gallery tabs
+
+
+def tt_select_album_blind(bp: BlindPhone, album: str, dropdown_region: tuple, list_x: float | None = None) -> None:
+    """Make TikTok's picker show `album`: tap the dropdown ONCE, then only scroll the list
+    until the album is visible and tap it. Never re-taps the dropdown (that toggles it closed)."""
+    W, H = bp.pt_w, bp.pt_h
+    pat = rf"^{re.escape(album)}"
+    x = list_x if list_x is not None else W * 0.3
+    words = bp.read()
+    if bp.find(pat, words, region=dropdown_region) and not bp.find(LIST_MARKERS, words):
+        return  # already selected
+    target = bp.find(pat, words)
+    if target is None and not bp.find(LIST_MARKERS, words):
+        dd = bp.find(r"^Recents", words, region=dropdown_region) or bp.find(r"^(Stories|Farm|Queue)", words, region=dropdown_region)
+        if not dd:
+            raise FlowError("TikTok album dropdown not found")
+        bp.tap_word(dd, "album dropdown", pause=2.0)
+        words = bp.read()
+        target = bp.find(pat, words)
+    for i in range(12):
+        if target:
+            bp.tap_word(target, f"album '{album}'", pause=2.0)
+            return
+        bp.log("info", "Scroll album list")
+        bp.s.swipe(int(x), int(H * 0.82), int(x), int(H * 0.45), 0.35)
+        time.sleep(1.2)
+        words = bp.read()
+        target = bp.find(pat, words)
+    raise FlowError(f"Album '{album}' not found in TikTok's album list")
 
 
 def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
@@ -274,13 +315,7 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
     bp.tap(32, row.cy, "Upload (camera roll thumbnail)", pause=3.0)
     # gallery: album dropdown ("Recents ⌄" or the current album name) sits top-middle
     bp.wait_for(r"^Next$", timeout=20, what="gallery")
-    top = (0, 0, W, 120)
-    cur = bp.find(rf"^{re.escape(album)}", region=top) or bp.find(r"^Recents", region=top)
-    if not cur:
-        raise FlowError("TikTok album dropdown not found")
-    if not cur.text.startswith(album):
-        bp.tap_word(cur, "album dropdown", pause=1.5)
-        bp.tap_text(rf"^{re.escape(album)}", timeout=8, what=f"album '{album}'", pause=2.0)
+    tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 120))
     words = bp.read()
     cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
                            float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")

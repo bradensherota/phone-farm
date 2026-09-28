@@ -70,6 +70,24 @@ def connect_device(device_id: str, s: Session = Depends(get_session)):
     return device_out(s, d)
 
 
+@router.post("/{device_id}/wake")
+def wake_device(device_id: str):
+    drv = manager.driver(device_id)
+    if drv is None or not hasattr(drv, "wake"):
+        raise HTTPException(404, "no runner for this phone")
+    drv.wake()
+    return {"locked": bool(getattr(drv, "is_locked", lambda: False)())}
+
+
+@router.post("/{device_id}/sleep")
+def sleep_device(device_id: str):
+    drv = manager.driver(device_id)
+    if drv is None or not hasattr(drv, "sleep"):
+        raise HTTPException(404, "no runner for this phone")
+    drv.sleep()
+    return {"locked": bool(getattr(drv, "is_locked", lambda: False)())}
+
+
 @router.post("/{device_id}/prepare")
 def prepare_queue(device_id: str, days: int = 7, s: Session = Depends(get_session)):
     """Put every item scheduled in the next `days` days into the phone's queue album now."""

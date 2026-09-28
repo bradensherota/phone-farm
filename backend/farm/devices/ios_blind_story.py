@@ -13,7 +13,7 @@ import re
 import time
 
 from .base import ActionSpec
-from .ios_blind import BlindPhone, _lattice_pick, tt_dismiss_prompt
+from .ios_blind import BlindPhone, _lattice_pick, tt_dismiss_prompt, tt_select_album_blind
 from .ios_flows import FlowError
 
 # Where the link sticker ends up: centred, this far down the screen (from the reference shot).
@@ -69,16 +69,10 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
     open_gallery(bp)
     bp.wait_for(r"^Add to Story$", timeout=20, what="Add to Story gallery")
     # album
-    top = (0, 0, W, 0.35 * H)
-    cur = bp.find(rf"^{re.escape(album)}", region=top) or bp.find(r"^Recents", region=top)
-    if not cur:
-        raise FlowError("Story gallery album dropdown not found")
-    if not cur.text.startswith(album):
-        bp.tap_word(cur, "album dropdown", pause=1.5)
-        bp.tap_text(rf"^{re.escape(album)}", timeout=8, what=f"album '{album}'", pause=2.0)
+    tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 0.35 * H), list_x=W * 0.25)
     words = bp.read()
     cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
-                           float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
+                           float(extra.get("duration_s") or 0) or None, spec.media_kind or "video", lead_tiles=1)
     bp.tap(cx, cy, "planned item", pause=3.0)
     # editor: the right rail has "Aa" (text); the sticker button is the next icon below it
     aa = bp.wait_for(r"^Aa$", timeout=20, what="story editor")

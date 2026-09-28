@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Account, Device, Job, Media, Platform } from "../lib/api";
 import { actionMeta, api, fmtDateTime, ymd } from "../lib/api";
-import { PhoneScreen, Pill, PlatformIcon, StatusDot, usePoll, useToast } from "../components/common";
+import { PhoneScreen, Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import { MediaPreview, RollGrid } from "../components/MediaPicker";
 import JobDetail from "../components/JobDetail";
 
@@ -41,6 +41,7 @@ export default function DevicePage() {
 
 function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
+  const ask = useConfirm();
   const nav = useNavigate();
   const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min });
   useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.prepare_lead_min]);
@@ -63,7 +64,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
   };
   const [clearing, setClearing] = useState(false);
   const clearQueue = async () => {
-    if (!confirm(`Empty the "${device.queue_album}" album on ${device.name}? Media stays in the library.`)) return;
+    if (!(await ask(`Empty the "${device.queue_album}" album on ${device.name}? Media stays in the library.`, "Empty it"))) return;
     setClearing(true);
     try { const r = await api.clearQueue(device.id); toast(r.cleared ? "Queue album emptied" : "Could not empty the album", r.cleared ? "ok" : "err"); onChanged(); }
     catch (e: any) { toast(e.message, "err"); }
@@ -75,7 +76,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
     onChanged();
   };
   const remove = async () => {
-    if (!confirm(`Remove ${device.name} and all of its accounts and planned posts?`)) return;
+    if (!(await ask(`Remove ${device.name} and all of its accounts and planned posts?`, "Remove"))) return;
     try { await api.deleteDevice(device.id); toast("Removed"); nav("/"); } catch (e: any) { toast(e.message, "err"); }
   };
   return (
@@ -123,12 +124,13 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
 
 function WakeTestCard({ device }: { device: Device }) {
   const toast = useToast();
+  const ask = useConfirm();
   const { data: t, reload } = usePoll(() => api.wakeTest(device.id), 10000, [device.id]);
   const [steps, setSteps] = useState("15, 30, 60, 180");
   if (!t) return null;
   const parsed = steps.split(/[,\s]+/).map((x) => parseInt(x, 10)).filter((n) => n > 0);
   const start = async () => {
-    if (!confirm(`Lock ${device.name} now, then wake and re-lock it after ${parsed.join(", ")} minutes? Nothing is posted.`)) return;
+    if (!(await ask(`Lock ${device.name} now, then wake and re-lock it after ${parsed.join(", ")} minutes? Nothing is posted.`, "Start test"))) return;
     try { await api.startWakeTest(device.id, parsed); toast("Wake test started; phone locked"); reload(); } catch (e: any) { toast(e.message, "err"); }
   };
   const cancel = async () => { await api.cancelWakeTest(device.id); toast("Wake test stopped"); reload(); };
@@ -187,6 +189,7 @@ function WakeTestCard({ device }: { device: Device }) {
 
 function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
+  const ask = useConfirm();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<{ platform: Platform; handle: string; story_link: string }>({ platform: "instagram", handle: "", story_link: "" });
   const [edit, setEdit] = useState<Record<number, Partial<Account>>>({});
@@ -205,7 +208,7 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
     try { await api.patchAccount(id, body); onChanged(); } catch (e: any) { toast(e.message, "err"); }
   };
   const remove = async (a: Account) => {
-    if (!confirm(`Remove @${a.handle} and all of its planned posts?`)) return;
+    if (!(await ask(`Remove @${a.handle} and all of its planned posts?`, "Remove"))) return;
     await api.deleteAccount(a.id);
     toast("Removed");
     onChanged();

@@ -46,6 +46,35 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ---- confirm ---------------------------------------------------------------
+// The native window (pywebview) doesn't show window.confirm(), so confirmations are an
+// in-app modal. `ask(message)` resolves true when the person presses the confirm button.
+type AskFn = (message: string, okLabel?: string) => Promise<boolean>;
+const ConfirmCtx = createContext<AskFn>(async () => false);
+export const useConfirm = () => useContext(ConfirmCtx);
+
+export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  const [q, setQ] = useState<{ message: string; okLabel: string; resolve: (v: boolean) => void } | null>(null);
+  const ask: AskFn = useCallback((message, okLabel = "Yes, do it") => new Promise<boolean>((resolve) => setQ({ message, okLabel, resolve })), []);
+  const answer = (v: boolean) => { q?.resolve(v); setQ(null); };
+  return (
+    <ConfirmCtx.Provider value={ask}>
+      {children}
+      {q && (
+        <div className="modal-bg" style={{ zIndex: 60 }} onClick={() => answer(false)}>
+          <div className="modal" style={{ width: "min(460px, 92vw)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-body" style={{ padding: 20, whiteSpace: "pre-wrap" }}>{q.message}</div>
+            <div className="modal-foot">
+              <button className="btn ghost" autoFocus onClick={() => answer(false)}>Cancel</button>
+              <button className="btn primary" onClick={() => answer(true)}>{q.okLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ConfirmCtx.Provider>
+  );
+}
+
 // ---- small bits -------------------------------------------------------------
 export function PlatformIcon({ platform }: { platform: Platform }) {
   const glyph = platform === "instagram" ? "IG" : platform === "tiktok" ? "TT" : "X";

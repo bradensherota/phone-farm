@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Account, Device, Job } from "../lib/api";
 import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, TIME_SLOTS, ymd } from "../lib/api";
 import type { DayStart } from "../lib/api";
-import { Pill, PlatformIcon, StatusDot, usePoll, useToast } from "../components/common";
+import { Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import PlanDrawer from "../components/PlanDrawer";
 
 export default function PlannerPage() {
@@ -19,8 +19,9 @@ export default function PlannerPage() {
   const setStart = async (deviceId: string, day: string, value: string) => { await scheduleApi.put(deviceId, day, value); reloadStarts(); };
   const [sel, setSel] = useState<{ account: Account; device: Device; date: string } | null>(null);
   const toast = useToast();
+  const ask = useConfirm();
   const runDay = async (device: Device, day: string, count: number) => {
-    if (!confirm(`Start ${device.name}'s whole queue for ${day} now? ${count} action(s) will run in order, real posts.`)) return;
+    if (!(await ask(`Start ${device.name}'s whole queue for ${day} now?\n${count} action(s) will run in order, real posts. The phone is woken first.`, "Run the day"))) return;
     try { const r = await api.runDay(device.id, day); toast(`Started ${r.started} action(s) on ${device.name}`); reload(); }
     catch (e: any) { toast(e.message, "err"); }
   };

@@ -1,6 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { api } from "./lib/api";
-import { StatusDot, ToastProvider, usePoll } from "./components/common";
+import { ConfirmProvider, StatusDot, ToastProvider, usePoll } from "./components/common";
 import DevicesPage from "./pages/DevicesPage";
 import DevicePage from "./pages/DevicePage";
 import PlannerPage from "./pages/PlannerPage";
@@ -41,6 +41,7 @@ function Rail() {
 export default function App() {
   return (
     <ToastProvider>
+      <ConfirmProvider>
       <div className="shell">
         <Rail />
         <main className="main">
@@ -53,6 +54,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

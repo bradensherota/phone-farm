@@ -74,6 +74,7 @@ class Device(Base):
     gap_max_s: Mapped[int] = mapped_column(Integer, default=300)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     accounts: Mapped[list[Account]] = relationship(
@@ -117,6 +118,7 @@ class MediaItem(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     probed: Mapped[bool] = mapped_column(Boolean, default=False)  # capture date/duration read from the file itself
     added_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # when it entered the library: the gallery's sort key
+    albums: Mapped[str] = mapped_column(String, default="")  # '|'-joined user album titles this item is in
 
     device: Mapped[Device] = relationship(back_populates="media")
 

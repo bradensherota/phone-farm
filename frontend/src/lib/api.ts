@@ -21,6 +21,8 @@ export interface Media {
   duration_s: number;
   size_bytes: number;
   created_at: string;
+  added_at: string | null;
+  albums: string;
   present: boolean;
   has_thumb: boolean;
   index: number | null;
@@ -36,6 +38,7 @@ export interface Device {
   gap_max_s: number;
   paused: boolean;
   sort_order: number;
+  story_album: string;
   connected: boolean;
   connecting: boolean;
   error: string;

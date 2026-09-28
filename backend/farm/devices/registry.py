@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+import time
 from datetime import datetime
 
 from ..config import THUMB_DIR, WDA_BASE_PORT
@@ -48,6 +49,13 @@ class DeviceManager:
         self._lock = threading.Lock()
         self._connecting: set[str] = set()
         self.last_error: dict[str, str] = {}
+        self.busy_provider = lambda: set()  # set by state.py to the runner's busy set
+
+    def busy_devices(self) -> set[str]:
+        try:
+            return set(self.busy_provider())
+        except Exception:
+            return set()
 
     # ---- bootstrap -------------------------------------------------------
     def seed_if_empty(self) -> None:
@@ -127,6 +135,34 @@ class DeviceManager:
 
         threading.Thread(target=work, name=f"connect-{device_id}", daemon=True).start()
 
+    # ---- watchdog --------------------------------------------------------
+    def start_watchdog(self, interval_s: float = 30.0) -> None:
+        """Real phones: if a runner that was up stops answering, start it again."""
+        def loop():
+            was_up: dict[str, bool] = {}
+            misses: dict[str, int] = {}
+            while True:
+                time.sleep(interval_s)
+                for did, drv in list(self._drivers.items()):
+                    if drv.kind != "ios" or did in self._connecting or did in self.busy_devices():
+                        continue  # never restart a runner that is mid-job; a long gesture can block its HTTP briefly
+                    try:
+                        up = drv.is_connected()
+                    except Exception:
+                        up = False
+                    if up:
+                        misses[did] = 0
+                        was_up[did] = True
+                        continue
+                    if was_up.get(did):
+                        misses[did] = misses.get(did, 0) + 1
+                        if misses[did] >= 3:  # ~90s of silence, not a busy blip
+                            log.warning("%s: runner stopped answering; restarting", drv.name)
+                            was_up[did] = False
+                            misses[did] = 0
+                            self.connect_async(did)
+        threading.Thread(target=loop, name="device-watchdog", daemon=True).start()
+
     def remove(self, device_id: str) -> None:
         drv = self._drivers.pop(device_id, None)
         if drv is not None and hasattr(drv, "disconnect"):
@@ -186,6 +222,7 @@ class DeviceManager:
                     row.duration_s = it.duration_s
                     row.created_at = it.created_at
                     row.added_at = it.added_at
+                    row.albums = "|".join(it.albums)
                     row.probed = True
                 elif not row.probed:  # once probed, the file's own capture date/duration win
                     row.duration_s = it.duration_s

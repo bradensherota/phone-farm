@@ -164,6 +164,7 @@ a { color: inherit; text-decoration: none; }
 .roll-item .meta .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roll-item .badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.65); padding: 2px 6px; border-radius: 6px; font-size: 11px; }
 .roll-item .idx { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.65); padding: 2px 6px; border-radius: 6px; font-size: 11px; color: var(--text-2); }
+.roll-item .badge.album { top: auto; bottom: 34px; left: 6px; background: rgba(182,240,90,.9); color: var(--accent-ink); font-weight: 600; }
 
 /* ---- planner -------------------------------------------------------- */
 .planner { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--bg-1); }

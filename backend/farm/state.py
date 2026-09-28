@@ -4,5 +4,6 @@ from .devices.registry import manager
 from .scheduler import Runner
 
 runner = Runner(manager)
+manager.busy_provider = lambda: runner.busy
 
 __all__ = ["manager", "runner"]

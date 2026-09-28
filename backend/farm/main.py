@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     # Thumbnail generation can take a while on a big roll; don't hold up the UI for it.
     sync_task = asyncio.create_task(asyncio.to_thread(manager.sync_all), name="initial-sync")
     runner.start()
+    manager.start_watchdog()
     log.info("Phone Farm ready")
     try:
         yield

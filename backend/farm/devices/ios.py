@@ -232,14 +232,15 @@ class IOSDriver(Driver):
             db = sqlite3.connect(f"file:{Path(td) / 'Photos.sqlite'}?mode=ro", uri=True)
             try:
                 rows = db.execute(
-                    "SELECT ZDIRECTORY, ZFILENAME, ZKIND, ZDURATION, ZDATECREATED, ZADDEDDATE "
+                    "SELECT Z_PK, ZDIRECTORY, ZFILENAME, ZKIND, ZDURATION, ZDATECREATED, ZADDEDDATE "
                     "FROM ZASSET WHERE ZTRASHEDSTATE=0 AND ZHIDDEN=0 AND ZFILENAME IS NOT NULL "
                     "ORDER BY ZADDEDDATE DESC"
                 ).fetchall()
+                albums_by_asset = _album_membership(db)
             finally:
                 db.close()
         items: list[RollItem] = []
-        for directory, fname, zkind, dur, created, added in rows:
+        for pk, directory, fname, zkind, dur, created, added in rows:
             if not directory or not directory.startswith("DCIM/"):
                 continue
             ext = Path(fname).suffix.lower()
@@ -251,6 +252,7 @@ class IOSDriver(Driver):
                 duration_s=round(float(dur or 0), 1),
                 added_at=_coredata_ts(added),
                 authoritative=True,
+                albums=tuple(albums_by_asset.get(pk, ())),
             ))
         return items
 
@@ -333,6 +335,35 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             return ActionResult(False, f"{type(e).__name__}: {e}", shot)
+
+
+def _album_membership(db) -> dict[int, list[str]]:
+    """asset Z_PK -> user album titles. The join table's name changes between iOS versions
+    (Z_<n>ASSETS with Z_<n>ALBUMS / Z_<m>ASSETS columns), so find it from the schema."""
+    import re
+    out: dict[int, list[str]] = {}
+    try:
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Z\\_%ASSETS' ESCAPE '\\'")]
+    except Exception:
+        return out
+    for t in tables:
+        cols = [r[1] for r in db.execute(f"PRAGMA table_info({t})")]
+        album_col = next((c for c in cols if re.fullmatch(r"Z_\d+ALBUMS", c)), None)
+        asset_col = next((c for c in cols if re.fullmatch(r"Z_\d+ASSETS", c)), None)
+        if not album_col or not asset_col:
+            continue
+        try:
+            rows = db.execute(
+                f"SELECT j.{asset_col}, g.ZTITLE FROM {t} j JOIN ZGENERICALBUM g ON g.Z_PK = j.{album_col} "
+                "WHERE g.ZKIND = 2 AND g.ZTRASHEDSTATE = 0 AND g.ZTITLE IS NOT NULL"
+            ).fetchall()
+        except Exception:
+            continue
+        for asset_pk, title in rows:
+            out.setdefault(asset_pk, []).append(title.strip())
+        if rows:
+            break
+    return out
 
 
 def _coredata_ts(value) -> datetime | None:

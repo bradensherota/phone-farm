@@ -49,6 +49,7 @@ class MediaOut(ORM):
     size_bytes: int
     created_at: datetime
     added_at: datetime | None = None
+    albums: str = ""
     present: bool
     has_thumb: bool = False
     index: int | None = None  # position in Recents, newest first (0-based)
@@ -73,6 +74,7 @@ class DeviceOut(ORM):
     gap_max_s: int
     paused: bool
     sort_order: int
+    story_album: str = "Stories"
     connected: bool = False
     connecting: bool = False
     error: str = ""
@@ -90,6 +92,7 @@ class DevicePatch(BaseModel):
     gap_max_s: int | None = None
     paused: bool | None = None
     sort_order: int | None = None
+    story_album: str | None = None
 
 
 # ---- jobs ------------------------------------------------------------------

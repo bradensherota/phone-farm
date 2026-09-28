@@ -41,9 +41,9 @@ export default function DevicePage() {
 function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
   const nav = useNavigate();
-  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s });
-  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s]);
-  const dirty = form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s;
+  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album });
+  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album]);
+  const dirty = form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s || form.story_album !== device.story_album;
   const save = async () => {
     try { await api.patchDevice(device.id, form); toast("Saved"); onChanged(); } catch (e: any) { toast(e.message, "err"); }
   };
@@ -78,6 +78,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
           <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button></div>
         )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
+        <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>
         <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>
         <div className="field"><label>Gap between actions (s)</label>
           <div className="row">
@@ -191,7 +192,7 @@ function RollTab({ device, onChanged }: { device: Device; onChanged: () => void 
         </span>
         <button className="btn sm" onClick={sync} disabled={syncing}>{syncing ? "Syncing…" : "Sync from phone"}</button>
       </div>
-      {items ? <RollGrid items={items} selectedId={null} onSelect={() => {}} /> : <div className="empty">Loading…</div>}
+      {items ? <RollGrid items={items} selectedId={null} onSelect={() => {}} storyAlbum={device.story_album} /> : <div className="empty">Loading…</div>}
     </div>
   );
 }

@@ -98,7 +98,7 @@ class Phone:
             pass
         time.sleep(0.5)
 
-    def flick(self, direction: str = "up", strength: float = 1.0) -> None:
+    def flick(self, direction: str = "up", strength: float = 1.0, settle: float = 1.3) -> None:
         """Quick scroll gesture. 'up' reveals content further down the list. The instant drag
         primitive doesn't scroll Instagram's grids at all; a fast pointer move does."""
         w, h = self.s.window_size()
@@ -113,7 +113,8 @@ class Phone:
         self.c.http.post(f"/session/{self.s.session_id}/actions", {"actions": [
             {"type": "pointer", "id": "finger1", "parameters": {"pointerType": "touch"}, "actions": acts}
         ]})
-        time.sleep(1.3)
+        if settle:
+            time.sleep(settle)
 
     def swipe_up(self, n: int = 1) -> None:
         for _ in range(n):
@@ -252,19 +253,126 @@ def _label_matches(label: str, date_part: str | None, dur_part: str | None, kind
     return True
 
 
+def ig_gallery_bar(p: Phone):
+    """The gallery grid's vertical scroll indicator. It's in the tree even while hidden, and its
+    value is the current scroll position as a percentage. Returns (element, pages) or None."""
+    import re
+    # only multi-page bars; the grid's is the tall one
+    for b in p.el(predicate="label BEGINSWITH 'Vertical scroll bar' AND NOT label CONTAINS ' 1 page'").find_elements():
+        try:
+            if b.bounds.height >= 200:
+                m = re.search(r"(\d+) pages", b.label or "")
+                return b, (int(m.group(1)) if m else 20)
+        except Exception:
+            continue
+    return None
+
+
+def _bar_pct(bar) -> float:
+    try:
+        return float((bar.value or "0%").rstrip("%")) / 100.0
+    except ValueError:
+        return 0.0
+
+
+def ig_gallery_position(p: Phone, total: int) -> int | None:
+    """Estimated index of the top visible row, from the scroll indicator's percentage."""
+    found = ig_gallery_bar(p)
+    if found is None or total <= 0:
+        return None
+    bar, _ = found
+    return int(round(_bar_pct(bar) * total))
+
+
+def ig_scrub_to(p: Phone, frac: float) -> None:
+    """Fast scroll with the scroll indicator (the date bubble on the right edge). It shows only
+    while the grid moves and disappears about a second after it stops, so: read the bar first,
+    nudge the grid, and press the thumb within a fraction of a second, then drag it.
+    iOS draws the thumb at the very right edge; its length is track / pages."""
+    frac = max(0.0, min(1.0, frac))
+    found = ig_gallery_bar(p)
+    if found is None:
+        p.log("warn", "Scroll indicator not found; falling back to flicks")
+        return
+    bar, pages = found
+    r = bar.bounds
+    cur = _bar_pct(bar)
+    thumb = max(20.0, r.height / max(pages, 1))
+    track = r.height - thumb
+    x = r.x + r.width - 4  # the indicator hugs the screen edge
+    y_from = r.y + cur * track + thumb / 2
+    y_to = r.y + frac * track + thumb / 2
+    p.log("info", f"Scrub gallery {cur * 100:.0f}% → {frac * 100:.0f}% (thumb {thumb:.0f}pt at y={y_from:.0f})")
+    p.flick("up", strength=0.2, settle=0)  # reveal the indicator (moves ~1%)
+    time.sleep(0.2)
+    p.drag(x, y_from + 0.01 * track, x, y_to, hold_ms=600, move_ms=1000, steps=20)
+    time.sleep(1.0)
+    after = ig_gallery_bar(p)
+    p.log("info", f"Scrub landed at {(after[0].value if after else '?')}")
+
+
+def ig_select_album(p: Phone, title: str) -> None:
+    """Switch Instagram's gallery from Recents to a Photos album by name (title may carry a
+    trailing space on the phone, so match by prefix)."""
+    title = title.strip()
+    if p.exists(predicate=f"label BEGINSWITH 'Gallery Selection, {title}'", timeout=1.5):
+        p.log("info", f"Album '{title}' already selected")
+        return
+    p.log("info", f"Switch gallery to album '{title}'")
+    # the dropdown button carries the current selection's name
+    sel = p.el(predicate="label BEGINSWITH 'Gallery Selection'").wait(timeout=5, raise_error=False)
+    if not sel:
+        raise FlowError("Gallery album dropdown not found")
+    sel.tap()
+    time.sleep(1.2)
+    p.tap(name="menu-item-All albums", what="All albums", timeout=8)
+    p.wait(label="Select album", what="album sheet", timeout=8)
+    pred = f"label BEGINSWITH '{title}' AND label CONTAINS 'items'"
+    if not p.exists(predicate=pred, timeout=4):
+        p.tap_if(label="See all", what="See all albums", timeout=2)
+        if not p.exists(predicate=pred, timeout=4):
+            raise FlowError(f"Album '{title}' not found in Instagram's album list")
+    p.tap(predicate=pred, what=f"album '{title}'", pause=2)
+    p.wait(predicate=f"label BEGINSWITH 'Gallery Selection, {title}'", what="album grid", timeout=10)
+
+
 def ig_pick_gallery_item(p: Phone, spec: ActionSpec) -> None:
+    """Tap the planned media in Instagram's gallery. Prefers the phone's story album when the
+    item is in it (short list, no scrolling); otherwise navigates Recents."""
+    extra = spec.extra or {}
+    if extra.get("album") and extra.get("album_index") is not None:
+        ig_select_album(p, extra["album"])
+        return _ig_pick_cell(p, spec, int(extra["album_index"]), total=0)
+    if p.exists(predicate="label BEGINSWITH 'Gallery Selection' AND NOT label CONTAINS 'Recents'", timeout=1):
+        # a previous run left an album selected; Recents indices only make sense in Recents
+        ig_select_album_recents(p)
+    return _ig_pick_cell(p, spec, spec.media_index, total=int(extra.get("roll_total") or 0))
+
+
+def ig_select_album_recents(p: Phone) -> None:
+    p.log("info", "Switch gallery back to Recents")
+    sel = p.el(predicate="label BEGINSWITH 'Gallery Selection'").wait(timeout=5, raise_error=False)
+    if sel:
+        sel.tap()
+        time.sleep(1.0)
+        p.tap(name="menu-item-Recents", what="Recents", timeout=6)
+        p.wait(predicate="label BEGINSWITH 'Gallery Selection, Recents'", what="Recents grid", timeout=8)
+
+
+def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
     """Tap the planned media in Instagram's gallery grid.
 
     Cells are named gallery-<kind>-cell-N with N = position in Recents (newest = 0), and their
     label carries the capture date and, for video, the duration. We go to the expected N first,
     verify the label, and if it doesn't match search the neighbouring cells for one that does.
     """
-    index = spec.media_index
+    if index is None:
+        raise FlowError("No media position for this item; sync the camera roll and re-plan")
     date_part, dur_part = _expected_label_parts(spec)
-    p.log("info", f"Looking for Recents #{index + 1}" + (f" ({date_part}{', ' + dur_part if dur_part else ''})" if date_part else ""))
+    p.log("info", f"Looking for cell #{index + 1}" + (f" ({date_part}{', ' + dur_part if dur_part else ''})" if date_part else ""))
 
     def cell(n):
-        return p.el(predicate=f"name BEGINSWITH 'gallery-' AND name ENDSWITH '-cell-{n}'").wait(timeout=1.5, raise_error=False)
+        return p.el(predicate=f"name BEGINSWITH 'gallery-' AND name ENDSWITH '-cell-{n}'").wait(timeout=0.8, raise_error=False)
 
     def visible_indices() -> list[int]:
         out = []
@@ -276,22 +384,32 @@ def ig_pick_gallery_item(p: Phone, spec: ActionSpec) -> None:
         return sorted(out)
 
     target = None
+    # total == 0 means an album grid: short, no scrubbing
+    scrubs = 0
     for _ in range(40):
         e = cell(index)
         if not e:
-            # aim the scroll: a full flick moves ~25 cells, so scale it to the distance
-            vis = visible_indices()
-            if not vis:
+            # where are we? one call via the scroll indicator; fall back to reading visible cells
+            pos = ig_gallery_position(p, total) if total else None
+            if pos is None:
+                vis = visible_indices()
+                pos = vis[0] if vis else None
+            if pos is None:
                 p.flick("up")
                 continue
-            if index > vis[-1]:
-                gap = index - vis[-1]
-                p.flick("up", strength=1.0 if gap > 20 else max(0.3, gap / 25))
-            elif index < vis[0]:
-                gap = vis[0] - index
-                p.flick("down", strength=1.0 if gap > 20 else max(0.3, gap / 25))
+            gap = index - pos
+            # far away: grab the scroll indicator (the date bubble) and drag straight there
+            if abs(gap) > 60 and scrubs < 2 and total > 0:
+                scrubs += 1
+                ig_scrub_to(p, index / total)
+                continue
+            # close: a full flick moves ~25 cells, so scale it to the distance
+            if gap > 0:
+                p.flick("up", strength=1.0 if gap > 20 else max(0.25, gap / 25))
+            elif gap < -3:
+                p.flick("down", strength=1.0 if -gap > 20 else max(0.25, -gap / 25))
             else:
-                p.flick("up", strength=0.3)  # should be visible but isn't instantiated yet; nudge
+                p.flick("up", strength=0.25)  # should be on screen but isn't instantiated yet; nudge
             continue
         if e:
             if _label_matches(e.label, date_part, dur_part, spec.media_kind):
@@ -355,17 +473,12 @@ def ig_place_link_sticker(p: Phone) -> None:
         b = e.bounds
         return b.x + b.width / 2, b.y + b.height / 2, b.width
 
-    # 1) grow to max: Instagram caps the size, so a few generous spreads saturate it
-    last_w = center(sticker())[2]
-    for i in range(5):
-        cx, cy, _ = center(sticker())
-        p.log("info", f"Pinch sticker out ({i + 1}), width {last_w:.0f}pt")
-        p.pinch_out(cx, cy)
-        time.sleep(1.5)
-        w = center(sticker())[2]
-        if w <= last_w + 3:  # stopped growing = at max
-            break
-        last_w = w
+    # 1) grow to max with a single wide spread. Instagram caps the size, so one big gesture
+    #    saturates it; a second one just shows the overshoot-and-snap-back animation.
+    cx, cy, w0 = center(sticker())
+    p.log("info", f"Pinch sticker to max (from {w0:.0f}pt)")
+    p.pinch_out(cx, cy, start_gap=40, end_gap=380)
+    time.sleep(1.5)
 
     # 2) drag to the standard position on the story canvas
     canvas = p.wait(name="story-media-composition-view", what="story canvas", timeout=5).bounds

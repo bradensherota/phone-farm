@@ -170,6 +170,13 @@ class Runner:
             job.last_error = ""
             account: Account = job.account
             media: MediaItem | None = job.media
+            device: Device = s.get(Device, device_id)
+            album, album_index = None, None
+            if media is not None and device is not None and device.story_album:
+                titles = [t for t in (media.albums or "").split("|") if t]
+                if device.story_album.strip() in titles:
+                    album = device.story_album.strip()
+                    album_index = _album_index(s, device_id, album, media)
             spec = ActionSpec(
                 action=job.action.value,
                 platform=account.platform.value,
@@ -184,11 +191,21 @@ class Runner:
                     "created_at": media.created_at.isoformat() if media and media.created_at else None,
                     "duration_s": media.duration_s if media else None,
                     "filename": media.filename if media else None,
+                    "roll_total": s.query(MediaItem).filter(MediaItem.device_id == device_id, MediaItem.present.is_(True)).count(),
+                    "album": album,
+                    "album_index": album_index,
                 },
             )
             attempt = job.attempts
         jlog("info", f"Attempt {attempt}: {spec.action} as @{spec.handle}")
 
+        if drv is not None and not drv.is_connected():
+            jlog("warn", "Phone's runner isn't answering; restarting it")
+            try:
+                drv.connect()
+            except Exception as e:
+                self._finish(job_id, ok=False, message=f"Phone offline: {e}", shot=None, attempt=attempt)
+                return
         if drv is None or not drv.is_connected():
             self._finish(job_id, ok=False, message="Phone offline", shot=None, attempt=attempt)
             return
@@ -235,6 +252,23 @@ class Runner:
                 else:
                     job.status = JobStatus.failed
                     s.add(JobLog(job_id=job_id, level="error", message=f"{message}. Giving up after {job.attempts} attempts."))
+
+
+def _album_index(s: Session, device_id: str, album: str, media: MediaItem) -> int | None:
+    """0-based position of this file inside a Photos album as Instagram shows it (capture date, newest first)."""
+    rows = (
+        s.query(MediaItem.id, MediaItem.albums)
+        .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True))
+        .order_by(MediaItem.created_at.desc(), MediaItem.id.desc())
+        .all()
+    )
+    i = 0
+    for mid, albums in rows:
+        if album in [t for t in (albums or "").split("|") if t]:
+            if mid == media.id:
+                return i
+            i += 1
+    return None
 
 
 def _media_index(s: Session, device_id: str, media: MediaItem) -> int | None:

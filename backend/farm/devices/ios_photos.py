@@ -146,8 +146,16 @@ def _select_cells_for(p: Phone, wanted: list[QueueItem]) -> list[QueueItem]:
                 if not w.matches(lab):
                     continue
                 r = e.bounds
-                if r.y < 0 or r.y + r.height > H - 80:
-                    break  # loaded but off-screen: scroll it in first
+                if r.y < 40 or r.y + r.height > H - 60:
+                    p.log("info", f"Scroll {w.filename.split('/')[-1]} into view")
+                    try:
+                        e.scroll("visible")
+                        time.sleep(0.8)
+                        r = e.bounds
+                    except Exception:
+                        continue
+                    if r.y < 40 or r.y + r.height > H - 60:
+                        continue
                 p.log("info", f"Select {w.filename.split('/')[-1]} ({w.time_part})")
                 _tap_rect(p, {"x": r.x, "y": r.y, "width": r.width, "height": r.height})
                 found.append(w)

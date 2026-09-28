@@ -38,6 +38,7 @@ class Phone:
         self.c = wda.Client(base_url)
         self.c.timeout = 60
         self.log = log
+        self.check = getattr(log, "check", lambda: None)  # raises FlowAborted after Stop was pressed
         self.s: wda.Session | None = None
 
     # ---- app ---------------------------------------------------------------
@@ -113,9 +114,11 @@ class Phone:
         return self.s(**q)
 
     def exists(self, timeout: float = 3, **q) -> bool:
+        self.check()
         return bool(self.el(**q).wait(timeout=timeout, raise_error=False))
 
     def wait(self, timeout: float = 15, what: str = "", **q):
+        self.check()
         e = self.el(**q).wait(timeout=timeout, raise_error=False)
         if not e:
             raise FlowError(f"Never saw {what or q} (waited {timeout}s)")
@@ -150,6 +153,7 @@ class Phone:
     def flick(self, direction: str = "up", strength: float = 1.0, settle: float = 1.3) -> None:
         """Quick scroll gesture. 'up' reveals content further down the list. The instant drag
         primitive doesn't scroll Instagram's grids at all; a fast pointer move does."""
+        self.check()
         w, h = self.s.window_size()
         span = int(h * 0.5 * max(0.2, min(strength, 1.0)))
         y0, y1 = (int(h * 0.8), int(h * 0.8) - span) if direction == "up" else (int(h * 0.3), int(h * 0.3) + span)

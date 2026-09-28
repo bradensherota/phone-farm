@@ -523,11 +523,16 @@ class IOSDriver(Driver):
         from .base import FlowAborted
         self.abort_requested = False
 
-        def guarded(level: str, message: str) -> None:
-            log_fn(level, message)
+        def check() -> None:
             if self.abort_requested:
+                self.abort_requested = False
                 log_fn("warn", "Stopped by hand")
                 raise FlowAborted("Stopped by hand")
+
+        def guarded(level: str, message: str) -> None:
+            log_fn(level, message)
+            check()
+        guarded.check = check  # type: ignore[attr-defined]
         return guarded
 
     def add_to_album(self, items: list, album: str, log_fn: LogFn) -> list:

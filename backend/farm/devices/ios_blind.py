@@ -49,6 +49,7 @@ class BlindPhone:
     def __init__(self, base_url: str, log: LogFn):
         self.base = base_url
         self.log = log
+        self.check = getattr(log, "check", lambda: None)  # raises FlowAborted after Stop was pressed
         self.c = wda.Client(base_url)
         self.c.timeout = 60
         self.s = self.c.session()  # bare session: attached to whatever is in front, no launch
@@ -71,6 +72,7 @@ class BlindPhone:
 
     def read(self) -> list[Word]:
         """Fresh screenshot -> words in points."""
+        self.check()
         png = self.screenshot_png()
         if self._scale is None:
             from PIL import Image

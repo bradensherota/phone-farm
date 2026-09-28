@@ -161,9 +161,13 @@ def prepare_queue(device_id: str, days: int = 7, s: Session = Depends(get_sessio
     lock = manager.op_lock(device_id)
     if not lock.acquire(timeout=2):
         raise HTTPException(409, "phone is busy (posting or preparing)")
+    runner.busy.add(device_id)
     try:
         return queue_mod.prepare(manager, device_id, days)
+    except Exception as e:
+        raise HTTPException(500, str(e))
     finally:
+        runner.busy.discard(device_id)
         lock.release()
 
 

@@ -148,3 +148,6 @@ locked phone; the keypad is read off a screenshot and the digits tapped. Sleep =
 screen; on a Face ID phone (iOS 26) WebDriverAgent's lock command does nothing, so the
 runner presses the side button through a HID event instead. The Sleep and Wake buttons on
 the phone page run exactly the steps the runner takes after the last job and before the first.
+The **Wake test** card on the phone page locks the phone, then wakes and re-locks it after each
+interval you give (default 15, 30, 60, 180 minutes), logging every step, to prove the runner
+survives long locked stretches before trusting an overnight schedule.

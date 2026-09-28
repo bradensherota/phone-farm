@@ -189,12 +189,11 @@ class IOSDriver(Driver):
         return self.is_locked(default=None)
 
     # ---- wake / sleep ----------------------------------------------------
-    # WebDriverAgent refuses to open a session while the screen is locked, so we keep a
-    # "standby" session open from before the lock and drive the wake through it.
+    # A "standby" session is kept open so the lock screen can be driven for the wake. Older
+    # builds refused to open a session while locked, so one is opened before every lock; on
+    # this build it also works while locked, so we always try and keep the old one if it fails.
     def _new_standby_session(self) -> str | None:
         try:
-            if self.is_locked():
-                return self._standby_sid
             self._standby_sid = self._post("/session", {"capabilities": {}}, timeout=25).get("sessionId")
             self._post(f"/session/{self._standby_sid}/appium/settings",
                        {"settings": {"snapshotMaxDepth": 2, "customSnapshotTimeout": 5, "waitForIdleTimeout": 0}}, timeout=10)

@@ -54,13 +54,24 @@ opens Instagram's gallery, flicks to the planned position, and verifies the cell
 label (photo/video, capture date, duration) before tapping; if it doesn't match it
 probes the neighbouring cells. Thumbnails are the only thing pulled file by file.
 
-**Story album (recommended).** Make a Photos album on each phone (default name
-`Stories`, editable on the phone page) and add the content you plan to post to it when
-you sit down to schedule. The app reads album membership from the same index; the picker
-marks those items and filters to them. For any item in the album, the flow switches
-Instagram's gallery to that album (Recents dropdown, All albums, the album) and picks by
-position in a list of a dozen instead of scrolling a roll of hundreds. Items not in the
-album still work via Recents.
+**Queue album (automatic).** Each phone has a queue album (default `Farm Queue`) that the
+app itself fills and empties by driving the Photos app through the runner:
+
+- *Prepare*: every item referenced by scheduled jobs in the next 7 days that isn't in the
+  album yet gets added. Photos search by capture date, select the cell whose label matches
+  (photo/video + capture time to the minute), Add to Album, creating the album on first use.
+  Runs `prepare_lead_min` minutes before the phone's routine (default 60), on demand from
+  "Prepare album now" on the phone page, and as a safety net right before a job.
+- *Release*: after a successful post the item is removed from the album (album trash,
+  "Remove from Album"); when nothing scheduled still needs anything in the album, it's
+  emptied in one go with Select All. Media is never deleted from the library.
+- Posts pick from the queue album first, then the story album, then Recents.
+
+**Story album (manual, optional).** A Photos album (default `Stories`) you curate yourself.
+The picker marks its items and filters to them. Same picking mechanism.
+
+Both album names and the lead time are per phone on the phone page. The Photos labels and
+identifiers used are documented in `devices/ios_photos.py`.
 
 ## Layout
 

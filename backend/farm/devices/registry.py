@@ -167,40 +167,73 @@ class DeviceManager:
         thumb_dir = THUMB_DIR / device_id
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
-        thumbs_made = 0
+        # Pass 1: mirror the listing. Short transaction, no device I/O inside it.
+        todo: list[tuple[int, str, bool, bool]] = []  # (row id, filename, needs_thumb, needs_probe)
         with session_scope() as s:
             existing = {m.filename: m for m in s.query(MediaItem).filter_by(device_id=device_id).all()}
             seen: set[str] = set()
-            for it in items:  # newest first, so the most relevant items get thumbnails first
+            for it in items:  # newest first
                 seen.add(it.filename)
                 row = existing.get(it.filename)
                 if row is None:
                     row = MediaItem(device_id=device_id, filename=it.filename, kind=it.kind)
                     s.add(row)
                 row.kind = it.kind
-                row.duration_s = it.duration_s
                 row.size_bytes = it.size_bytes
-                row.created_at = it.created_at
+                if not row.probed:  # once probed, the file's own capture date/duration win
+                    row.duration_s = it.duration_s
+                    row.created_at = it.created_at
                 row.present = True
                 row.last_seen = now
-                if not row.thumb_path and thumbs_made < MAX_THUMBS_PER_SYNC:
-                    key = hashlib.sha1(f"{device_id}:{it.filename}".encode()).hexdigest()[:16]
-                    out = thumb_dir / f"{key}.jpg"
-                    if not out.exists():
-                        thumbs_made += 1  # counts pulls, so a huge roll is thumbnailed over several syncs
-                        try:
-                            data = drv.thumbnail(it.filename)
-                        except Exception as e:
-                            log.warning("thumb %s failed: %s", it.filename, e)
-                            data = None
-                        if data:
-                            out.write_bytes(data)
-                    if out.exists():
-                        row.thumb_path = str(out)
-                    s.flush()
+                s.flush()
+                if not row.thumb_path or not row.probed:
+                    todo.append((row.id, it.filename, not row.thumb_path, not row.probed))
             for fname, row in existing.items():
                 if fname not in seen and row.present:
                     row.present = False
+
+        # Pass 2: pull files for thumbnails + capture metadata, newest first, a bounded number per
+        # sync. Each row is written in its own short transaction so the UI and runner never wait.
+        pulls = 0
+        for row_id, filename, needs_thumb, needs_probe in todo:
+            if pulls >= MAX_THUMBS_PER_SYNC:
+                break
+            update: dict = {}
+            if needs_thumb:
+                key = hashlib.sha1(f"{device_id}:{filename}".encode()).hexdigest()[:16]
+                out = thumb_dir / f"{key}.jpg"
+                if not out.exists():
+                    pulls += 1
+                    try:
+                        data = drv.thumbnail(filename)
+                    except Exception as e:
+                        log.warning("thumb %s failed: %s", filename, e)
+                        data = None
+                    if data:
+                        out.write_bytes(data)
+                if out.exists():
+                    update["thumb_path"] = str(out)
+            if needs_probe:
+                cached = filename in getattr(drv, "_meta_cache", {})
+                if not cached:
+                    pulls += 1
+                try:
+                    meta = drv.media_meta(filename)
+                except Exception as e:
+                    log.warning("probe %s failed: %s", filename, e)
+                    meta = None
+                if meta:
+                    if meta.get("duration_s"):
+                        update["duration_s"] = float(meta["duration_s"])
+                    if meta.get("captured_at"):
+                        update["created_at"] = meta["captured_at"]
+                update["probed"] = True  # None = can't probe (sim, or file too big); don't keep retrying
+            if update:
+                with session_scope() as s:
+                    row = s.get(MediaItem, row_id)
+                    if row is not None:
+                        for k, v in update.items():
+                            setattr(row, k, v)
         return len(items)
 
     def sync_all(self) -> None:

@@ -93,6 +93,7 @@ class IOSDriver(Driver):
         self._lock = threading.Lock()
         self._log_path = config.DATA_DIR / "logs" / f"wda-{device_id}.log"
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._meta_cache: dict[str, dict] = {}
 
     # ---- lifecycle -------------------------------------------------------
     def connect(self) -> None:
@@ -223,7 +224,7 @@ class IOSDriver(Driver):
             return items
         return self._afc(go)
 
-    def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
+    def _pull(self, filename: str) -> bytes | None:
         ext = Path(filename).suffix.lower()
 
         async def go(afc):
@@ -232,14 +233,34 @@ class IOSDriver(Driver):
                 return None
             return await afc.get_file_contents(f"/DCIM/{filename}")
 
-        data = self._afc(go)
+        return self._afc(go)
+
+    def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
+        """Pull the file once; make the thumbnail and remember its capture date + duration."""
+        ext = Path(filename).suffix.lower()
+        data = self._pull(filename)
         if not data:
             return None
         with tempfile.TemporaryDirectory() as td:
             local = Path(td) / Path(filename).name
             local.write_bytes(data)
+            self._meta_cache[filename] = _probe_media(local)
             from .simulated import _image_thumb, _video_thumb
             return _video_thumb(local, max_px) if ext in VIDEO_EXT else _image_thumb(local, max_px)
+
+    def media_meta(self, filename: str) -> dict | None:
+        cached = self._meta_cache.get(filename)
+        if cached is not None:
+            return cached
+        data = self._pull(filename)
+        if not data:
+            return None
+        with tempfile.TemporaryDirectory() as td:
+            local = Path(td) / Path(filename).name
+            local.write_bytes(data)
+            meta = _probe_media(local)
+        self._meta_cache[filename] = meta
+        return meta
 
     # ---- actions ---------------------------------------------------------
     def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:
@@ -255,6 +276,46 @@ class IOSDriver(Driver):
             except Exception:
                 pass
             return ActionResult(False, f"{type(e).__name__}: {e}", shot)
+
+
+def _probe_media(local: Path) -> dict:
+    """Capture date + duration from the file's own metadata (what Instagram's gallery sorts by)."""
+    meta: dict = {"duration_s": 0.0, "captured_at": None}
+    ext = local.suffix.lower()
+    try:
+        if ext in VIDEO_EXT:
+            out = _run(["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags=creation_time",
+                        "-of", "json", str(local)], timeout=30).stdout
+            fmt = json.loads(out or "{}").get("format", {})
+            meta["duration_s"] = round(float(fmt.get("duration") or 0), 1)
+            ct = (fmt.get("tags") or {}).get("creation_time")
+            if ct:
+                meta["captured_at"] = _parse_iso_local(ct)
+        else:
+            out = _run(["sips", "-g", "creation", str(local)], timeout=20).stdout
+            for line in out.splitlines():
+                if "creation:" in line:
+                    raw = line.split("creation:", 1)[1].strip()  # e.g. 2026:09:27 16:37:09
+                    try:
+                        meta["captured_at"] = datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
+                    except ValueError:
+                        pass
+    except Exception as e:
+        log.debug("probe %s failed: %s", local.name, e)
+    return meta
+
+
+def _parse_iso_local(value: str) -> datetime | None:
+    """QuickTime creation_time is UTC ('2026-09-27T20:37:09.000000Z'); convert to local naive."""
+    from datetime import timezone
+    try:
+        v = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().replace(tzinfo=None)
+    except Exception:
+        return None
 
 
 __all__ = ["IOSDriver", "discover_ios_devices", "find_xctestrun", "io"]

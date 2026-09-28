@@ -180,6 +180,11 @@ class Runner:
                 caption=job.caption,
                 link=job.link,
                 link_text=job.link_text,
+                extra={
+                    "created_at": media.created_at.isoformat() if media and media.created_at else None,
+                    "duration_s": media.duration_s if media else None,
+                    "filename": media.filename if media else None,
+                },
             )
             attempt = job.attempts
         jlog("info", f"Attempt {attempt}: {spec.action} as @{spec.handle}")

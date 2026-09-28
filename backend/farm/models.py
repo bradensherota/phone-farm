@@ -115,6 +115,7 @@ class MediaItem(Base):
     thumb_path: Mapped[str] = mapped_column(String, default="")
     present: Mapped[bool] = mapped_column(Boolean, default=True)  # false once it disappears from the roll
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    probed: Mapped[bool] = mapped_column(Boolean, default=False)  # capture date/duration read from the file itself
 
     device: Mapped[Device] = relationship(back_populates="media")
 

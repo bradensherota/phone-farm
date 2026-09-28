@@ -72,5 +72,10 @@ class Driver(ABC):
     @abstractmethod
     def run_action(self, spec: ActionSpec, log: LogFn) -> ActionResult: ...
 
+    def media_meta(self, filename: str) -> dict | None:
+        """Optional: {'duration_s': float, 'captured_at': datetime} read from the file itself.
+        Real phones sort their gallery by capture date, which can differ from the file's timestamps."""
+        return None
+
     def info(self) -> dict:
         return {"kind": self.kind, "connected": self.is_connected()}

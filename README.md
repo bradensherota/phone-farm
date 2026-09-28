@@ -46,10 +46,13 @@ For real phones, on the Mac with Xcode: `cd backend && uv sync --extra ios`.
 
 ## How the phone finds the media
 
-Content gets to the phone by AirDrop. The app reads the phone's camera roll listing
-(read-only) and shows it in the picker. When posting, the flow opens the app's own
-gallery picker and taps the item at the same position in Recents (newest first). The
-media list is re-synced right before a phone's queue runs so positions are current.
+Content gets to the phone by AirDrop. The app reads the phone's Photos library index
+(`/PhotoData/Photos.sqlite` over USB, read-only) and mirrors it: capture date, duration,
+kind, and the **date-added order**, which is exactly the order Instagram's Recents grid
+uses. The picker shows that order with each item's position. When posting, the flow
+opens Instagram's gallery, flicks to the planned position, and verifies the cell's own
+label (photo/video, capture date, duration) before tapping; if it doesn't match it
+probes the neighbouring cells. Thumbnails are the only thing pulled file by file.
 
 ## Layout
 

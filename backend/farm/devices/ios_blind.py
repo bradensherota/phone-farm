@@ -163,17 +163,49 @@ class BlindPhone:
         w = self.wait_for(r"^Paste$", timeout=5, what="Paste menu")
         self.tap_word(w, "Paste", pause=1.0)
 
+    def _settings(self, depth: int) -> None:
+        try:
+            self.c.http.post(f"/session/{self.s.session_id}/appium/settings",
+                             {"settings": {"snapshotMaxDepth": depth, "customSnapshotTimeout": 10, "waitForIdleTimeout": 0, "animationCoolOffTimeout": 0}})
+        except Exception:
+            pass
+
     def launch_from_home(self, app_label: str, pages: int = 4) -> None:
-        """Open an app by tapping its icon on the home screen (found by its label)."""
+        """Open an app from the home screen. Springboard is asked for the icon's position (that
+        is harmless; only the app itself must never be attached to), pages are swiped until it
+        is on screen, and the tap is a plain coordinate tap. Falls back to OCR if that fails."""
         self.home()
         self.home()  # second press: first home-screen page
+        W = self.pt_w
+        try:
+            self._settings(60)  # Springboard's tree is shallow-ish and cheap; icons sit deep in it
+            for _ in range(pages + 1):
+                icon = self.s(predicate=f"label == '{app_label}' AND type == 'XCUIElementTypeIcon'").wait(timeout=3, raise_error=False)
+                if not icon:
+                    break
+                b = icon.bounds
+                cx, cy = b.x + b.width / 2, b.y + b.height / 2
+                if 0 <= cx <= W and b.width > 10:
+                    self.log("info", f"Open {app_label} from the home screen (icon at {cx:.0f},{cy:.0f})")
+                    self._settings(2)
+                    self.tap(cx, cy, app_label, pause=4.0)
+                    return
+                # icon lives on another page: swipe towards it
+                if cx > W:
+                    self.swipe(W - 40, 400, 40, 400)
+                else:
+                    self.swipe(40, 400, W - 40, 400)
+        except Exception as e:
+            self.log("warn", f"Springboard lookup failed ({e}); falling back to reading the screen")
+        finally:
+            self._settings(2)
         for _ in range(pages):
             w = self.find(rf"^{re.escape(app_label)}$", self.read())
             if w:
                 self.log("info", f"Open {app_label} from the home screen")
                 self.tap(w.cx, w.y - 32, app_label, pause=4.0)  # icon sits above its label
                 return
-            self.swipe(330, 400, 60, 400)
+            self.swipe(W - 60, 400, 60, 400)
         raise FlowError(f"{app_label} icon not found on the home screen")
 
     def release(self) -> None:

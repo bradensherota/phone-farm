@@ -21,7 +21,7 @@ export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: M
     <div className="roll">
       {items.map((m) => (
         <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""}`} onClick={() => onSelect(m)} title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}`}>
-          <div className="th">{thumbUrl(m) ? <img src={thumbUrl(m)} alt="" loading="lazy" /> : m.kind}</div>
+          <div className="th"><img src={thumbUrl(m)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /></div>
           <span className="badge">{m.kind === "video" ? `▶ ${fmtDuration(m.duration_s)}` : "photo"}</span>
           {m.index !== null && <span className="idx">#{m.index + 1}</span>}
           {storyAlbum && inAlbum(m, storyAlbum) && <span className="badge album">★ {storyAlbum}</span>}

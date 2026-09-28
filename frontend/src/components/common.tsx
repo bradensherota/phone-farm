@@ -64,8 +64,7 @@ export function StatusDot({ connected, busy }: { connected: boolean; busy?: bool
 export function MediaThumb({ media, className }: { media: Media | null | undefined; className?: string }) {
   const url = thumbUrl(media);
   if (!media) return <div className={className}>none</div>;
-  if (!url) return <div className={className}>{media.kind}</div>;
-  return <img className={className} src={url} alt={media.filename} />;
+  return <img className={className} src={url} alt={media.filename} onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }} />;
 }
 
 /** Live phone screen. Polls the screenshot endpoint while mounted. */

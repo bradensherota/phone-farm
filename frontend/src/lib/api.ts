@@ -201,7 +201,7 @@ export const TIME_SLOTS: [string, string][] = Array.from({ length: 96 }, (_, i) 
 });
 export const fmtHHMM = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
 
-export const thumbUrl = (m: Media | null | undefined) => (m && m.has_thumb ? `/api/media/${m.id}/thumb.jpg` : "");
+export const thumbUrl = (m: Media | null | undefined) => (m ? `/api/media/${m.id}/thumb.jpg` : "");  // made on demand server-side
 export const screenUrl = (deviceId: string) => `/api/devices/${deviceId}/screen.png?t=${Date.now()}`;
 export const shotUrl = (jobId: number) => `/api/jobs/${jobId}/screenshot.png?t=${Date.now()}`;
 

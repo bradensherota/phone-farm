@@ -4,6 +4,7 @@ import { useToast } from "../components/common";
 
 const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" }[] = [
   { key: "runner_enabled", label: "Runner enabled", help: "Master switch. Off = nothing posts anywhere.", type: "bool" },
+  { key: "queue_auto", label: "App manages the queue album", help: "Off: you add each planned clip to the phone's queue album in Photos yourself and remove it after. On: the app fills the album before the day starts and empties it after posting (slower and less reliable).", type: "bool" },
   { key: "dry_run", label: "Dry run", help: "Every flow runs all the way to the final Post / Share button and stops there without posting. Turn off for real posting.", type: "bool" },
   { key: "pace_multiplier", label: "Pace multiplier", help: "Multiplies every phone's gap between actions. 1.0 = as configured per phone. Use 0.05 while testing simulated phones.", type: "number" },
   { key: "max_attempts", label: "Max attempts", help: "How many tries before an action is marked failed (retries wait ~3 minutes).", type: "number" },

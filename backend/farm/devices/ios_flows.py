@@ -402,6 +402,9 @@ def ig_pick_gallery_item(p: Phone, spec: ActionSpec) -> None:
     if extra.get("album") and extra.get("album_index") is not None:
         ig_select_album(p, extra["album"])
         return _ig_pick_cell(p, spec, int(extra["album_index"]), total=0)
+    if extra.get("albums_required", True):
+        name = (extra.get("filename") or "the item").split("/")[-1]
+        raise FlowError(f"{name} is not in the phone's queue or story album. Add it in Photos, then run this stage again.")
     if p.exists(predicate="label BEGINSWITH 'Gallery Selection' AND NOT label CONTAINS 'Recents'", timeout=1):
         # a previous run left an album selected; Recents indices only make sense in Recents
         ig_select_album_recents(p)

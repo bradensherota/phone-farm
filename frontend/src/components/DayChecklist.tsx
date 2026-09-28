@@ -69,8 +69,8 @@ export default function DayChecklist({ device }: { device: Device }) {
           <button className="btn sm ghost" style={{ marginLeft: "auto" }} disabled={busyLine !== ""} onClick={() => sys("wake", () => api.wakeDevice(device.id), (r) => (r.locked ? "Still locked" : "Awake and unlocked"))}>{busyLine === "wake" ? "…" : "Run"}</button>
         </div>
         <div className="ck-line">
-          <Icon m="todo" /><span>Fill "{device.queue_album}" album with this day's items</span>
-          <button className="btn sm ghost" style={{ marginLeft: "auto" }} disabled={busyLine !== ""} onClick={() => sys("queue", () => api.prepareDevice(device.id, 1), (r) => r.message)}>{busyLine === "queue" ? "…" : "Run"}</button>
+          <Icon m="todo" /><span>Clips for the day are in the "{device.queue_album}" album on the phone</span>
+          <span className="small dim" style={{ marginLeft: "auto" }}>you add and remove them in Photos</span>
         </div>
         {rows.length === 0 && <div className="ck-line dim small">Nothing planned on this day.</div>}
         {rows.map((job) => {

@@ -112,9 +112,10 @@ class Runner:
         with session_scope() as s:
             devices = s.query(Device).filter(Device.paused.is_(False)).all()
             wake = [d.id for d in devices if d.id not in self.busy and due_jobs(s, d, now)]
+            auto_album = settings_mod.as_bool(settings_mod.get("queue_auto", "false"))
             prep = [
                 d.id for d in devices
-                if d.id not in self.busy and d.kind != "sim" and self._prepare_window(d, now)
+                if auto_album and d.id not in self.busy and d.kind != "sim" and self._prepare_window(d, now)
                 and self._prepared_on.get(d.id) != now.date()
             ]
         for did in prep:
@@ -254,8 +255,11 @@ class Runner:
             from_start = not stage_only and not stage_from
         if drv is not None and hasattr(drv, "wake") and drv.is_connected():
             drv.wake()  # wake and unlock before anything touches the screen
-        if from_start or stage_only == "open" or stage_from == "open":
+        auto_album = settings_mod.as_bool(settings_mod.get("queue_auto", "false"))
+        if auto_album and (from_start or stage_only == "open" or stage_from == "open"):
             self._ensure_queued(device_id, job_id)
+        else:
+            self._refresh_album_membership(device_id, job_id)
 
         stage_now = {"name": ""}
 
@@ -351,8 +355,31 @@ class Runner:
             return
         self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt,
                      stage=stage_now["name"], partial=result.partial, manual=bool(manual))
-        if result.ok and not result.partial:
+        if result.ok and not result.partial and auto_album:
             self._release_after_post(device_id, job_id)
+
+    def _refresh_album_membership(self, device_id: str, job_id: int) -> None:
+        """You put items into the album on the phone yourself; make sure the app's copy of the
+        album lists is fresh before it decides where to look for this job's media."""
+        with session_scope() as s:
+            job = s.query(Job).options(selectinload(Job.media)).get(job_id)
+            dev = s.get(Device, device_id)
+            if job is None or dev is None or job.media is None or dev.kind == "sim":
+                return
+            titles = [t for t in (job.media.albums or "").split("|") if t]
+            wanted = [a.strip() for a in (dev.queue_album, dev.story_album) if a and a.strip()]
+            if any(a in titles for a in wanted):
+                return
+        drv = self.manager.driver(device_id)
+        if drv is None or not drv.is_connected():
+            return
+        jl_msg = f"Checking the phone's albums for {job.media.filename.split('/')[-1]}"
+        with session_scope() as s:
+            s.add(JobLog(job_id=job_id, level="info", message=jl_msg))
+        try:
+            self.manager.sync_media(device_id)
+        except Exception as e:
+            log.warning("album refresh failed: %s", e)
 
     def _ensure_queued(self, device_id: str, job_id: int) -> None:
         """Safety net: if this job's media isn't in the queue album yet, add it now."""

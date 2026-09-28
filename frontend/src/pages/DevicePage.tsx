@@ -73,6 +73,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
     catch (e: any) { toast(e.message, "err"); }
     finally { setClearing(false); }
   };
+  void prepare; void clearQueue;
   const reconnect = async () => {
     await api.connectDevice(device.id);
     toast("Starting the phone's runner… takes up to a minute");
@@ -105,9 +106,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
           </div></div>
         )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
-        <div className="field"><label>Queue album</label><div className="row"><input className="input" style={{ width: 120 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Album the app fills with scheduled items and empties after posting" /><input className="input" type="number" style={{ width: 70 }} value={form.prepare_lead_min} onChange={(e) => setForm({ ...form, prepare_lead_min: +e.target.value })} title="Minutes before the routine to fill it" /><span className="dim small">min before</span></div></div>
-        <div className="field"><label>&nbsp;</label><button className="btn" disabled={preparing || device.kind === "sim"} onClick={prepare}>{preparing ? "Preparing…" : "Prepare album now"}</button></div>
-        <div className="field"><label>&nbsp;</label><button className="btn ghost" disabled={clearing || device.kind === "sim"} onClick={clearQueue}>{clearing ? "Emptying…" : "Empty queue album"}</button></div>
+        <div className="field"><label>Queue album</label><input className="input" style={{ width: 130 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Photos album on this phone where you put the clips you plan. Reels, posts and stories are picked from here." /></div>
         <div className="field"><label>Passcode {device.has_passcode ? <span className="dim">(set)</span> : <span className="dim">(none)</span>}</label><input className="input" type="password" style={{ width: 100 }} placeholder={device.has_passcode ? "••••••" : "none"} autoComplete="off" onChange={(e) => setPasscode(e.target.value)} value={passcode} title="Lock-screen passcode the runner types to wake this phone. Stored only in this Mac's local database." /></div>
         <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>
         <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>

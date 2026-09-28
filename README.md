@@ -132,3 +132,17 @@ Under the hood: `devices/ios.py` keeps one `xcodebuild test-without-building` pr
 one `pymobiledevice3 usbmux forward` per phone, talks to WebDriverAgent over HTTP, and
 reads `/DCIM` over AFC. Posting flows live in `devices/ios_flows.py` and are written
 against the live apps; labels change with app updates, so expect touch-ups.
+
+**TikTok is driven blind** (`devices/ios_blind.py`, `devices/ios_blind_story.py`). TikTok
+freezes or quits when the UI-testing harness attaches to it, so the runner never launches or
+queries it. It taps the app icon on the home screen, reads screenshots with Apple's Vision
+text recognition (`tools/ocr.swift`, compiled once to `~/PhoneFarm/ocr`), taps by position,
+types with the runner's keyboard input, and finds the item in the queue album by counting
+back from the newest (the story gallery has a camera tile first). Post and story with link
+sticker are both mapped.
+
+**Wake and lock.** Farm phones without a passcode wake with home + swipe. A phone with a
+passcode (set it on the phone page; stored only locally) is woken through a standby runner
+session kept open from before the lock, since WebDriverAgent can't open a session on a
+locked phone; the keypad is read off a screenshot and the digits tapped. The runner cannot
+lock a Face ID phone on iOS 26, so keep Auto-Lock on Never there.

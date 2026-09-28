@@ -172,10 +172,19 @@ class BlindPhone:
         except Exception:
             pass
 
-    def launch_from_home(self, app_label: str, pages: int = 4) -> None:
-        """Open an app from the home screen. Springboard is asked for the icon's position (that
-        is harmless; only the app itself must never be attached to), pages are swiped until it
-        is on screen, and the tap is a plain coordinate tap. Falls back to OCR if that fails."""
+    def launch_from_home(self, app_label: str, pages: int = 4, bundle_id: str | None = None) -> None:
+        """Open an app without attaching to it. First choice: WebDriverAgent's unattached launch
+        by bundle id (no icon hunting). Fallback: the home screen, where Springboard is asked for
+        the icon's position (harmless; only the app itself must never be attached to), pages are
+        swiped until it is on screen, and the tap is a plain coordinate tap; OCR as a last resort."""
+        if bundle_id:
+            try:
+                self.log("info", f"Open {app_label} ({bundle_id})")
+                self.c.http.post("/wda/apps/launchUnattached", {"bundleId": bundle_id})
+                time.sleep(4.0)
+                return
+            except Exception as e:
+                self.log("warn", f"Unattached launch failed ({e}); using the home screen")
         self.home()
         self.home()  # second press: first home-screen page
         W = self.pt_w
@@ -220,12 +229,38 @@ class BlindPhone:
 # ---- TikTok --------------------------------------------------------------------------
 
 DUR_RX = re.compile(r"^\d\d:\d\d$")
+TIKTOK_BUNDLE = "com.zhiliaoapp.musically"
 
 
-def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, want_secs: float | None, kind: str, lead_tiles: int = 0) -> tuple[float, float]:
-    """Cell centre for the item `from_end` places before the newest (3 columns, oldest first,
-    ending at the newest). Position is authoritative; the duration overlay, when readable,
-    is only a cross-check that stops the run on a clear contradiction."""
+def _secs(text: str) -> int:
+    return int(text[:2]) * 60 + int(text[3:5])
+
+
+def _close(a, b) -> bool:
+    return a is not None and b is not None and abs(int(a) - int(b)) <= 1
+
+
+def read_grid(bp: BlindPhone, tries: int = 3) -> list[Word]:
+    """Read the screen, waiting briefly for the grid's duration overlays to render."""
+    words = bp.read()
+    for _ in range(tries - 1):
+        if any(DUR_RX.match(w.text.strip()) for w in words):
+            break
+        time.sleep(1.2)
+        words = bp.read()
+    return words
+
+
+def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, want_secs: float | None, kind: str,
+                  lead_tiles: int = 0, newest_s: float | None = None, oldest_s: float | None = None,
+                  tile_ratio: float = 1.0) -> tuple[float, float]:
+    """Cell centre for the planned item in TikTok's 3-column album grid.
+
+    `from_end` is the item's newest-first position (0 = newest). TikTok builds differ in
+    which way the grid runs, so the order is checked against the first media tile's duration
+    overlay (newest item's length vs oldest item's); newest-first is assumed when it can't be
+    told apart. Row pitch comes from the overlays when readable, else from `tile_ratio`
+    (height / width of a tile). The overlay on the chosen tile is a cross-check only."""
     cols, cell_w = 3, bp.pt_w / 3
     overlays = [w for w in words if DUR_RX.match(w.text.strip())]
     if overlays:
@@ -234,39 +269,45 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
         for b in bottoms:
             if not rows or b - rows[-1] > 20:
                 rows.append(b)
-        pitch = min(b - a for a, b in zip(rows, rows[1:])) if len(rows) > 1 else cell_w * 0.79
-        bottom = rows[-1] + 6
-        last_row_bottom = bottom
+        pitch = min(b - a for a, b in zip(rows, rows[1:])) if len(rows) > 1 else cell_w * tile_ratio
+        top = rows[0] + 6 - pitch  # top of the first row that has a readable overlay (the grid's first row when not scrolled)
     else:
-        # no readable overlays (all photos, or a single tile): grid starts just below the tab row
         tabs = bp.find(r"^(Favorites|Videos|Photos|All)$", words)
         if tabs is None:
             raise FlowError("Can't locate TikTok's grid (no duration overlays and no tab row)")
-        pitch = cell_w  # story/post grids are square tiles
+        pitch = cell_w * tile_ratio
         top = tabs.y + tabs.h + 12
-        last_row_bottom = top + pitch * (((count - 1 + lead_tiles) // cols) + 1)
-        bottom = last_row_bottom
-    # lead_tiles: non-media tiles at the start of the grid (the story gallery has a camera tile first)
+
+    def overlay_in(row: int, col: int):
+        x0, y1 = col * cell_w, top + (row + 1) * pitch
+        return next((w for w in overlays if x0 <= w.cx <= x0 + cell_w and abs((w.y + w.h) - y1) < pitch * 0.35), None)
+
+    # which way does the grid run? look at the first media tile
+    newest_first = True
+    first = overlay_in(lead_tiles // cols, lead_tiles % cols)
+    if first is not None:
+        got = _secs(first.text)
+        if _close(got, oldest_s) and not _close(got, newest_s):
+            newest_first = False
+        elif _close(got, newest_s) and not _close(got, oldest_s):
+            newest_first = True
     last_index = count - 1 + lead_tiles
-    target = last_index - from_end
-    if target < lead_tiles:
-        raise FlowError("Item position is before the start of the album")
-    rows_up = last_index // cols - target // cols
-    col = target % cols
-    cy = bottom - rows_up * pitch - pitch / 2
+    target = lead_tiles + from_end if newest_first else last_index - from_end
+    if target < lead_tiles or target > last_index:
+        raise FlowError("Item position falls outside the album grid; re-sync the camera roll and re-plan")
+    row, col = target // cols, target % cols
+    cy = top + row * pitch + pitch / 2
     cx = col * cell_w + cell_w / 2
-    here = [w for w in overlays if abs(w.cy - (cy + pitch / 2 - 12)) < pitch / 2 and abs(w.cx - (cx + cell_w / 2 - 22)) < cell_w / 2]
-    if here and kind == "video" and want_secs:
-        got = int(here[0].text[:2]) * 60 + int(here[0].text[3:5])
-        if abs(got - int(want_secs)) > 1:
-            raise FlowError(f"Cell {from_end + 1} from the end is {here[0].text}, expected ~{int(want_secs)}s; re-sync the album and re-plan")
+    here = overlay_in(row, col)
+    if here and kind == "video" and want_secs and not _close(_secs(here.text), want_secs):
+        raise FlowError(f"Cell {target + 1} is {here.text}, expected ~{int(want_secs)}s; re-sync the album and re-plan")
     if here and kind == "photo":
-        raise FlowError(f"Cell {from_end + 1} from the end is a video ({here[0].text}) but a photo was planned")
+        raise FlowError(f"Cell {target + 1} is a video ({here.text}) but a photo was planned")
     if not here and kind == "video":
         bp.log("warn", "No duration overlay readable on the target cell; trusting the position")
     if cy < 90 or cy > bp.pt_h - 60:
         raise FlowError("Planned item is scrolled out of view; keep the queue album short")
-    bp.log("info", f"TikTok: cell {from_end + 1} from the end" + (f" ({here[0].text})" if here else ""))
+    bp.log("info", f"TikTok: cell {target + 1} ({'newest first' if newest_first else 'oldest first'} grid)" + (f" ({here.text})" if here else ""))
     return cx, cy
 
 
@@ -326,7 +367,7 @@ def tt_select_album_blind(bp: BlindPhone, album: str, dropdown_region: tuple, li
 def tt_go_home(bp: BlindPhone) -> None:
     """Open TikTok and get to its tab bar, closing any leftover camera/composer screen."""
     W, H = bp.pt_w, bp.pt_h
-    bp.launch_from_home("TikTok")
+    bp.launch_from_home("TikTok", bundle_id=TIKTOK_BUNDLE)
     for _ in range(7):
         words = bp.read()
         if bp.find(r"^(Home|Inbox|Friends|Profile)$", words, region=(0, H - 90, W, H)):
@@ -365,9 +406,10 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec):
             bp.tap(32, row.cy, "Upload (camera roll thumbnail)", pause=3.0)
         bp.wait_for(r"^(Next|Select multiple)$", timeout=20, what="gallery")
         tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 120))
-        words = bp.read()
+        words = read_grid(bp)
         cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
-                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
+                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video",
+                               newest_s=extra.get("album_newest_s"), oldest_s=extra.get("album_oldest_s"), tile_ratio=1.33)
         bp.tap(cx, cy, "planned item", pause=1.5)
         bp.tap_text(r"^Next$", timeout=10, region=(W / 2, H / 2, W, H), what="Next (to editor)", pause=3.0)
         time.sleep(3)  # let TikTok attach a sound when it detects no speech
@@ -456,7 +498,7 @@ def tt_ensure_account(bp: BlindPhone, handle: str) -> None:
 def tt_open_story_gallery(bp: BlindPhone) -> None:
     """Get TikTok to the 'Add to Story' gallery: Profile tab, then the blue + on the avatar."""
     W, H = bp.pt_w, bp.pt_h
-    bp.launch_from_home("TikTok")
+    bp.launch_from_home("TikTok", bundle_id=TIKTOK_BUNDLE)
     for _ in range(6):
         words = bp.read()
         if bp.find(r"^Add to Story$", words):

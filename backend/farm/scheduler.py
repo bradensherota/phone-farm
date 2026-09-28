@@ -337,6 +337,8 @@ class Runner:
                     "album": album,
                     "album_index": album_index,  # newest-first position (Instagram's album order)
                     "album_count": _album_count(s, device_id, album) if album else None,
+                    "album_newest_s": _album_edge_durations(s, device_id, album)[0] if album else None,
+                    "album_oldest_s": _album_edge_durations(s, device_id, album)[1] if album else None,
                     # oldest-first grids (TikTok): places before the newest item, 0 = newest
                     "album_from_end": album_index,
                     "dry_run": settings_mod.as_bool(settings_mod.get("dry_run", "false")),
@@ -501,6 +503,20 @@ def _album_index(s: Session, device_id: str, album: str, media: MediaItem) -> in
                 return i
             i += 1
     return None
+
+
+def _album_edge_durations(s: Session, device_id: str, album: str) -> tuple[float | None, float | None]:
+    """(newest item's length, oldest item's length) in an album; used to tell which way a grid runs."""
+    rows = (
+        s.query(MediaItem.albums, MediaItem.duration_s)
+        .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True))
+        .order_by(MediaItem.created_at.desc(), MediaItem.id.desc())
+        .all()
+    )
+    members = [d for albums, d in rows if album in [t for t in (albums or "").split("|") if t]]
+    if not members:
+        return None, None
+    return members[0], members[-1]
 
 
 def _album_count(s: Session, device_id: str, album: str) -> int:

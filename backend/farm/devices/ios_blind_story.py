@@ -13,7 +13,7 @@ import re
 import time
 
 from .base import ActionSpec
-from .ios_blind import BlindPhone, _lattice_pick, tt_dismiss_prompt, tt_select_album_blind
+from .ios_blind import BlindPhone, _lattice_pick, read_grid, tt_dismiss_prompt, tt_select_album_blind
 from .ios_flows import FlowError
 
 # Where the link sticker ends up: centred, this far down the screen (from the reference shot).
@@ -77,9 +77,11 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
         if not bp.find(r"^Add to Story$", bp.read()):
             raise FlowError("Not on the 'Add to Story' gallery (run the 'open' stage first)")
         tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 0.35 * H), list_x=W * 0.25)
-        words = bp.read()
+        words = read_grid(bp)
+        # story grid: a camera tile first, portrait tiles (~16:9 tall)
         cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
-                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video", lead_tiles=1)
+                               float(extra.get("duration_s") or 0) or None, spec.media_kind or "video", lead_tiles=1,
+                               newest_s=extra.get("album_newest_s"), oldest_s=extra.get("album_oldest_s"), tile_ratio=1.77)
         bp.tap(cx, cy, "planned item", pause=3.0)
         bp.wait_for(r"^Aa$", timeout=20, what="story editor")
 

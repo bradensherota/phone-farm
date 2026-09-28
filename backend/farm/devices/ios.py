@@ -268,13 +268,47 @@ class IOSDriver(Driver):
             from PIL import Image
             import io as _io
             scale = Image.open(_io.BytesIO(png)).width / w
+            import re as _re
             for wd in words:
                 t = wd["text"].strip()
-                if len(t) == 1 and t.isdigit() and (wd["y"] / scale) > h * 0.3:
-                    keys.setdefault(t, ((wd["x"] + wd["w"] / 2) / scale, (wd["y"] + wd["h"] / 2) / scale))
+                m = _re.match(r"^(\d)(?:\s*[A-Z]{2,4})?$", t)  # keys read as "2", "2 ABC" or "2ABC"
+                if m and (wd["y"] / scale) > h * 0.3:
+                    cx = (wd["x"] + wd["w"] / 2) / scale
+                    if len(t) > 1:  # letters widen the box; the digit sits centred above them
+                        cx = (wd["x"] + wd["w"] / 2) / scale
+                    keys.setdefault(m.group(1), (cx, (wd["y"] + wd["h"] / 2) / scale))
             if len(keys) >= 10:
                 break
             time.sleep(1.0)
+        if 6 <= len(keys) < 10:
+            # fill gaps from the keypad lattice: 3 columns, rows 1-3 / 4-6 / 7-9 / 0 (centre column)
+            cols = {0: [], 1: [], 2: []}
+            rows = {0: [], 1: [], 2: [], 3: []}
+            for d, (x, y) in keys.items():
+                n = int(d)
+                c, r = (1, 3) if n == 0 else ((n - 1) % 3, (n - 1) // 3)
+                cols[c].append(x)
+                rows[r].append(y)
+            med = lambda v: sorted(v)[len(v) // 2] if v else None
+            cx = {c: med(v) for c, v in cols.items()}
+            ry = {r: med(v) for r, v in rows.items()}
+            known_c = [c for c in cx if cx[c] is not None]
+            known_r = [r for r in ry if ry[r] is not None]
+            if len(known_c) >= 2 and len(known_r) >= 2:
+                pc = (cx[known_c[-1]] - cx[known_c[0]]) / (known_c[-1] - known_c[0])
+                pr = (ry[known_r[-1]] - ry[known_r[0]]) / (known_r[-1] - known_r[0])
+                for c in cx:
+                    if cx[c] is None:
+                        cx[c] = cx[known_c[0]] + (c - known_c[0]) * pc
+                for r in ry:
+                    if ry[r] is None:
+                        ry[r] = ry[known_r[0]] + (r - known_r[0]) * pr
+                for n in range(10):
+                    d = str(n)
+                    if d not in keys:
+                        c, r = (1, 3) if n == 0 else ((n - 1) % 3, (n - 1) // 3)
+                        keys[d] = (cx[c], ry[r])
+                log.info("%s: keypad inferred from %d read keys", self.name, len(known_c) + len(known_r))
         if len(keys) < 10:
             log.warning("%s: keypad not visible (found %d digits); cannot type passcode", self.name, len(keys))
             return

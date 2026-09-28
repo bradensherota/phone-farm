@@ -323,7 +323,7 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
 
 
 def tt_open_story_gallery(bp: BlindPhone) -> None:
-    """Get TikTok to the 'Add to Story' gallery. Entry taps to be confirmed on-device."""
+    """Get TikTok to the 'Add to Story' gallery: Profile tab, then the blue + on the avatar."""
     W, H = bp.pt_w, bp.pt_h
     bp.launch_from_home("TikTok")
     for _ in range(6):
@@ -335,7 +335,25 @@ def tt_open_story_gallery(bp: BlindPhone) -> None:
         if tt_dismiss_prompt(bp, words):
             continue
         bp.tap(35, 90, "close (X)", pause=2.0)
-    raise FlowError("Story entry not mapped yet: how do you reach 'Add to Story'?")
+    prof = bp.wait_for(r"^Profile$", timeout=15, region=(0, H - 90, W, H), what="Profile tab")
+    bp.tap_word(prof, "Profile tab", pause=3.0)
+    # the avatar sits top-right of the profile header with a blue + at its bottom-right corner,
+    # level with the Following / Followers / Likes row
+    row = bp.wait_for(r"^(Followers|Following|Likes)$", timeout=15, what="profile header")
+    bp.tap(W * 0.925, row.cy - row.h * 0.4, "avatar +", pause=3.0)
+    for _ in range(4):
+        words = bp.read()
+        if bp.find(r"^Add to Story$", words):
+            return
+        # a chooser may appear first ("Create story" / "Story")
+        opt = bp.find(r"^(Create story|Add to story|Story)$", words)
+        if opt:
+            bp.tap_word(opt, opt.text, pause=3.0)
+            continue
+        if tt_dismiss_prompt(bp, words):
+            continue
+        time.sleep(1.5)
+    raise FlowError("Did not reach the 'Add to Story' gallery from the profile avatar")
 
 
 def run_blind(driver, spec: ActionSpec, log: LogFn):

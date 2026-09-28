@@ -69,6 +69,8 @@ export interface Job {
   attempts: number;
   last_error: string;
   has_screenshot: boolean;
+  group_key: string;
+  group_origin_account_id: number | null;
   started_at: string | null;
   finished_at: string | null;
   next_run: string | null;
@@ -87,6 +89,7 @@ export interface JobIn {
   link_text: string;
   run_date: string;
   run_at: string | null;
+  all_accounts?: boolean;
 }
 
 export interface JobLog {

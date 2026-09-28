@@ -16,6 +16,8 @@ interface Props {
 
 interface Draft {
   enabled: boolean;
+  allAccounts?: boolean;
+  mirroredFrom?: number | null; // set when this story was created by another account's "all accounts" story
   jobId?: number;
   status?: Job["status"];
   media: Media | null;
@@ -28,9 +30,12 @@ interface Draft {
 
 function draftFrom(meta: ActionMeta, account: Account, job?: Job): Draft {
   if (job) {
+    const origin = job.group_origin_account_id;
     return {
       enabled: true, jobId: job.id, status: job.status, media: job.media, caption: job.caption,
       link: job.link, link_text: job.link_text, run_at: toLocalInput(job.run_at), job,
+      allAccounts: origin !== null && origin === account.id,
+      mirroredFrom: origin !== null && origin !== account.id ? origin : null,
     };
   }
   return { enabled: false, media: null, caption: "", link: meta.link ? account.story_link : "", link_text: "", run_at: "" };
@@ -64,6 +69,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
       if (!d) continue;
       const locked = d.status === "done" || d.status === "running";
       if (locked) continue;
+      if (d.mirroredFrom) continue; // edited from the origin account
       if (d.enabled) {
         if (!d.media) { toast(`${a.label} needs media`, "err"); return; }
         if (a.link && !d.link) { toast(`${a.label} needs a link`, "err"); return; }
@@ -71,6 +77,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
           id: d.jobId, account_id: account.id, action: a.action, media_id: d.media.id,
           caption: d.caption, link: a.link ? d.link : "", link_text: a.link ? d.link_text : "",
           run_date: date, run_at: d.run_at ? new Date(d.run_at).toISOString() : null,
+          all_accounts: !!d.allAccounts,
         });
       } else if (d.jobId) {
         deletes.push(d.jobId);
@@ -108,7 +115,8 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
           {actions.map((a) => {
             const d = drafts[a.action];
             if (!d) return null;
-            const locked = d.status === "done" || d.status === "running";
+            const locked = d.status === "done" || d.status === "running" || !!d.mirroredFrom;
+            const originHandle = d.mirroredFrom ? (device.accounts.find((x) => x.id === d.mirroredFrom)?.handle || "another account") : "";
             return (
               <div className="section" key={a.action}>
                 <div className="sec-head">
@@ -119,8 +127,17 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                   {d.status && <Pill kind={d.status}>{d.status}</Pill>}
                   {d.job && <button className="btn sm ghost" onClick={() => setDetail(d.job!)}>Details</button>}
                 </div>
-                {d.enabled && (
+                {d.enabled && d.mirroredFrom && (
+                  <div className="sec-body"><div className="small dim">Set for every account on this phone from <b>@{originHandle}</b>. Edit or remove it there.</div></div>
+                )}
+                {d.enabled && !d.mirroredFrom && (
                   <div className="sec-body">
+                    {a.link && (
+                      <label className="switch" style={{ alignSelf: "flex-start" }}>
+                        <input type="checkbox" checked={!!d.allAccounts} disabled={locked} onChange={(e) => upd(a.action, { allAccounts: e.target.checked })} />
+                        <span className="small">Post this story on every account on this phone (each with its own link)</span>
+                      </label>
+                    )}
                     <div className="media-pick">
                       <MediaThumb media={d.media} className="th" />
                       <div className="grow">

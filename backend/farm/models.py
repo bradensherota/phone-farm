@@ -146,6 +146,7 @@ class Job(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str] = mapped_column(Text, default="")
     screenshot_path: Mapped[str] = mapped_column(String, default="")
+    group_key: Mapped[str] = mapped_column(String, default="")  # "allstories:<origin account id>:<date>" for fan-out stories
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

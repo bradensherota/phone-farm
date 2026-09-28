@@ -119,6 +119,8 @@ class JobOut(ORM):
     attempts: int
     last_error: str
     has_screenshot: bool = False
+    group_key: str = ""
+    group_origin_account_id: int | None = None
     started_at: datetime | None
     finished_at: datetime | None
     next_run: datetime | None = None
@@ -137,6 +139,7 @@ class JobIn(BaseModel):
     link_text: str = ""
     run_date: date
     run_at: datetime | None = None
+    all_accounts: bool = False  # stories only: fan out to every story-capable account on the phone
 
 
 class JobLogOut(ORM):

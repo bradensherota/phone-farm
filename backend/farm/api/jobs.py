@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, selectinload
 
 from ..db import get_session
-from ..models import ACTIONS, Account, Action, Device, Job, JobLog, JobStatus, MediaItem
+from ..models import ACTIONS, Account, AccountStatus, Action, Device, Job, JobLog, JobStatus, MediaItem
 from ..scheduler import next_run_for
 from ..schemas import JobIn, JobLogOut, JobOut, MediaOut
 from ..state import runner
@@ -24,6 +24,11 @@ def job_out(j: Job, s: Session | None = None) -> JobOut:
         out.media = MediaOut.model_validate(j.media)
         out.media.has_thumb = bool(j.media.thumb_path)
     out.has_screenshot = bool(j.screenshot_path) and Path(j.screenshot_path).exists()
+    if j.group_key.startswith("allstories:"):
+        try:
+            out.group_origin_account_id = int(j.group_key.split(":")[1])
+        except (IndexError, ValueError):
+            pass
     out.handle = j.account.handle
     out.platform = j.account.platform.value
     out.device_name = j.account.device.name if j.account.device else ""
@@ -112,6 +117,49 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
             job.attempts = 0
             job.last_error = ""
         saved.append(job)
+        # "post this story on every account on this phone": mirror it to the other story-capable accounts
+        if meta["label"] == "Story":
+            key = f"allstories:{account.id}:{item.run_date.isoformat()}"
+            if item.all_accounts:
+                job.group_key = key
+                s.flush()
+                others = (
+                    s.query(Account)
+                    .filter(Account.device_id == account.device_id, Account.id != account.id, Account.status == AccountStatus.active)
+                    .all()
+                )
+                for other in others:
+                    o_action = next((a for a, m in ACTIONS.items() if m["platform"] == other.platform and m["label"] == "Story"), None)
+                    if o_action is None:
+                        continue
+                    twin = (
+                        s.query(Job)
+                        .filter(Job.account_id == other.id, Job.run_date == item.run_date, Job.action == o_action)
+                        .first()
+                    )
+                    if twin is not None and twin.status in (JobStatus.running, JobStatus.done):
+                        continue
+                    if twin is None:
+                        twin = Job(account_id=other.id, device_id=other.device_id, action=o_action)
+                        s.add(twin)
+                    twin.media_id = job.media_id
+                    twin.caption = job.caption
+                    twin.link = other.story_link or job.link
+                    twin.link_text = job.link_text
+                    twin.run_date = item.run_date
+                    twin.run_at = None
+                    twin.sort_order = other.sort_order * 10 + ACTIONS[o_action]["rank"]
+                    twin.group_key = key
+                    if twin.status in (JobStatus.failed, JobStatus.cancelled):
+                        twin.status = JobStatus.scheduled
+                        twin.attempts = 0
+                        twin.last_error = ""
+                    saved.append(twin)
+            elif job.group_key == key:
+                # toggle turned off on the origin: drop the mirrored copies (keep the origin)
+                for twin in s.query(Job).filter(Job.group_key == key, Job.id != job.id, Job.status == JobStatus.scheduled).all():
+                    s.delete(twin)
+                job.group_key = ""
     s.commit()
     ids = [j.id for j in saved]
     rows = s.query(Job).options(*_LOAD).filter(Job.id.in_(ids)).all()
@@ -126,6 +174,9 @@ def delete_job(job_id: int, s: Session = Depends(get_session)):
         raise HTTPException(404, "job not found")
     if j.status == JobStatus.running:
         raise HTTPException(409, "job is running")
+    if j.group_key.startswith("allstories:") and j.group_key.split(":")[1] == str(j.account_id):
+        for twin in s.query(Job).filter(Job.group_key == j.group_key, Job.id != j.id, Job.status == JobStatus.scheduled).all():
+            s.delete(twin)
     s.delete(j)
     s.commit()
     return {"ok": True}

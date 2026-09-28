@@ -128,7 +128,7 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart }:
                   {cellJobs.map((j) => (
                     <div key={j.id} className={`chip ${j.status} ${j.media ? "" : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.last_error ? ` · ${j.last_error}` : ""}`}>
                       {j.media && thumbUrl(j.media) ? <img className="th" src={thumbUrl(j.media)} alt="" /> : <span className="th" />}
-                      <span className="t">{actionMeta(j.action).label}{j.link_text ? ` · ${j.link_text}` : j.caption ? ` · ${j.caption.slice(0, 30)}` : ""}</span>
+                      <span className="t">{actionMeta(j.action).label}{j.group_origin_account_id !== null ? (j.group_origin_account_id === a.id ? " · all accounts" : " · ↳") : ""}{j.link_text ? ` · ${j.link_text}` : j.caption ? ` · ${j.caption.slice(0, 30)}` : ""}</span>
                     </div>
                   ))}
                   {cellJobs.length === 0 && <span className="add">+</span>}

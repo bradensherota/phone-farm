@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { Account, Device, Job, Media, Platform } from "../lib/api";
 import { actionMeta, api, fmtDateTime, ymd } from "../lib/api";
 import { PhoneScreen, Pill, PlatformIcon, StatusDot, usePoll, useToast } from "../components/common";
-import { RollGrid } from "../components/MediaPicker";
+import { MediaPreview, RollGrid } from "../components/MediaPicker";
 import JobDetail from "../components/JobDetail";
 
 type Tab = "accounts" | "roll" | "schedule";
@@ -203,6 +203,7 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
 function RollTab({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const [items, setItems] = useState<Media[] | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [preview, setPreview] = useState<Media | null>(null);
   const toast = useToast();
   const load = () => api.media(device.id).then(setItems).catch((e) => toast(e.message, "err"));
   useEffect(() => { load(); }, [device.id]);
@@ -218,7 +219,8 @@ function RollTab({ device, onChanged }: { device: Device; onChanged: () => void 
         </span>
         <button className="btn sm" onClick={sync} disabled={syncing}>{syncing ? "Syncing…" : "Sync from phone"}</button>
       </div>
-      {items ? <RollGrid items={items} selectedId={null} onSelect={() => {}} storyAlbum={device.story_album} /> : <div className="empty">Loading…</div>}
+      {items ? <RollGrid items={items} selectedId={null} onSelect={(m) => setPreview(m)} storyAlbum={device.story_album} /> : <div className="empty">Loading…</div>}
+      {preview && <MediaPreview media={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

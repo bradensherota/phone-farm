@@ -449,6 +449,9 @@ class IOSDriver(Driver):
 
         return self._afc(go)
 
+    def pull_file(self, filename: str) -> bytes | None:
+        return self._pull(filename)
+
     def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
         """Pull the file once; make the thumbnail and remember its capture date + duration."""
         ext = Path(filename).suffix.lower()

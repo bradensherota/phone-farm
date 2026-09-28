@@ -87,6 +87,10 @@ class Driver(ABC):
         """Optional: take every item out of a Photos album (never deletes the media)."""
         return False
 
+    def pull_file(self, filename: str) -> bytes | None:
+        """Optional: the original bytes of a roll item (for previews)."""
+        return None
+
     def media_meta(self, filename: str) -> dict | None:
         """Optional: {'duration_s': float, 'captured_at': datetime} read from the file itself.
         Real phones sort their gallery by capture date, which can differ from the file's timestamps."""

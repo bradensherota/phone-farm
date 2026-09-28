@@ -11,7 +11,9 @@ from ..db import get_session
 from ..models import ACTIONS, DaySchedule, Device, MediaItem
 from datetime import date
 from ..schemas import RunnerState
-from ..state import runner
+from ..state import manager, runner
+from ..config import DATA_DIR
+import subprocess, tempfile
 
 router = APIRouter(tags=["misc"])
 
@@ -74,3 +76,38 @@ def put_schedule(body: dict, s: Session = Depends(get_session)):
         row.start = start
     s.commit()
     return {"ok": True}
+
+
+PREVIEW_DIR = DATA_DIR / "previews"
+PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@router.get("/media/{media_id}/preview")
+def preview(media_id: int, s: Session = Depends(get_session)):
+    """Browser-playable copy of a roll item: H.264 720p mp4 for video, JPEG for photos. Cached."""
+    m = s.get(MediaItem, media_id)
+    if m is None:
+        raise HTTPException(404, "no such media")
+    ext = ".mp4" if m.kind == "video" else ".jpg"
+    out = PREVIEW_DIR / f"{media_id}{ext}"
+    if not out.exists():
+        drv = manager.driver(m.device_id)
+        if drv is None:
+            raise HTTPException(404, "phone not connected")
+        data = drv.pull_file(m.filename)
+        if not data:
+            raise HTTPException(404, "could not read the file from the phone")
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / Path(m.filename).name
+            src.write_bytes(data)
+            tmp = out.with_suffix(out.suffix + ".part")
+            if m.kind == "video":
+                cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "veryfast",
+                       "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "-f", "mp4", str(tmp)]
+            else:
+                cmd = ["sips", "-s", "format", "jpeg", "-Z", "1600", str(src), "--out", str(tmp)]
+            r = subprocess.run(cmd, capture_output=True, timeout=600)
+            if r.returncode != 0 or not tmp.exists():
+                raise HTTPException(500, f"preview conversion failed: {r.stderr.decode(errors='ignore')[-200:]}")
+            tmp.rename(out)
+    return FileResponse(out, media_type="video/mp4" if m.kind == "video" else "image/jpeg", headers={"Cache-Control": "max-age=86400"})

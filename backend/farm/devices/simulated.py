@@ -90,6 +90,10 @@ class SimulatedDriver(Driver):
         items.sort(key=lambda r: r.created_at, reverse=True)
         return items
 
+    def pull_file(self, filename: str) -> bytes | None:
+        p = self.folder / filename
+        return p.read_bytes() if p.exists() else None
+
     def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
         p = self.folder / filename
         if not p.exists():

@@ -7,20 +7,22 @@ import logging
 import threading
 from datetime import datetime
 
-from ..config import THUMB_DIR
+from ..config import THUMB_DIR, WDA_BASE_PORT
 from ..db import session_scope
 from ..models import Account, AccountStatus, Device, MediaItem, Platform
 from .. import settings as settings_mod
 from .base import Driver
-from .ios import IOSDriver
+from .ios import IOSDriver, discover_ios_devices
 from .simulated import SimulatedDriver
 
 log = logging.getLogger("farm.devices")
 
-# Simulated stand-ins for the real phones until the iOS driver lands.
+MAX_THUMBS_PER_SYNC = 25  # real phones: each video thumbnail means pulling the whole file over USB
+
+# Simulated stand-ins, seeded only when no real phone has ever been seen.
 SEED_DEVICES = [
     {
-        "id": "sim-17promax", "name": "iPhone 17 Pro Max", "model": "iPhone 17 Pro Max", "sort_order": 0,
+        "id": "sim-17promax", "name": "iPhone 17 Pro Max (sim)", "model": "iPhone 17 Pro Max", "sort_order": 0,
         "accounts": [
             (Platform.instagram, "ig_main_17"), (Platform.instagram, "ig_alt_17"),
             (Platform.tiktok, "tt_main_17"), (Platform.tiktok, "tt_alt_17"),
@@ -28,13 +30,13 @@ SEED_DEVICES = [
         ],
     },
     {
-        "id": "sim-15pro", "name": "iPhone 15 Pro", "model": "iPhone 15 Pro", "sort_order": 1,
+        "id": "sim-15pro", "name": "iPhone 15 Pro (sim)", "model": "iPhone 15 Pro", "sort_order": 1,
         "accounts": [
             (Platform.instagram, "ig_a_15"), (Platform.instagram, "ig_b_15"), (Platform.instagram, "ig_c_15"),
         ],
     },
     {
-        "id": "sim-13", "name": "iPhone 13", "model": "iPhone 13", "sort_order": 2,
+        "id": "sim-13", "name": "iPhone 13 (sim)", "model": "iPhone 13", "sort_order": 2,
         "accounts": [(Platform.instagram, "ig_main_13")],
     },
 ]
@@ -44,6 +46,8 @@ class DeviceManager:
     def __init__(self):
         self._drivers: dict[str, Driver] = {}
         self._lock = threading.Lock()
+        self._connecting: set[str] = set()
+        self.last_error: dict[str, str] = {}
 
     # ---- bootstrap -------------------------------------------------------
     def seed_if_empty(self) -> None:
@@ -64,22 +68,76 @@ class DeviceManager:
                 s.add(dev)
             log.info("Seeded %d simulated devices", len(SEED_DEVICES))
 
-    def load(self) -> None:
+    def discover(self) -> list[str]:
+        """Register any iPhone plugged in over USB. Returns the ids seen."""
+        seen = []
+        found = discover_ios_devices()
+        if not found:
+            return seen
+        with session_scope() as s:
+            n = s.query(Device).count()
+            for i, d in enumerate(found):
+                dev = s.get(Device, d["udid"])
+                if dev is None:
+                    dev = Device(id=d["udid"], name=d["name"], model=d["model"], kind="ios", sort_order=n + i)
+                    s.add(dev)
+                    log.info("New iPhone: %s (%s)", d["name"], d["udid"])
+                else:
+                    dev.model = d["model"] or dev.model
+                seen.append(d["udid"])
+        return seen
+
+    def load(self, connect: bool = True) -> None:
+        self.discover()
         with session_scope() as s:
             devices = s.query(Device).order_by(Device.sort_order).all()
-        with self._lock:
-            for dev in devices:
+        for dev in devices:
+            with self._lock:
                 if dev.id in self._drivers:
                     continue
                 if dev.kind == "sim":
                     drv: Driver = SimulatedDriver(dev.id, dev.name, settings_mod.get_all)
                 else:
-                    drv = IOSDriver(dev.id, dev.name, wda_port=8100 + dev.sort_order)
-                try:
-                    drv.connect()
-                except Exception as e:  # real phones without tooling just show offline
-                    log.warning("Device %s offline: %s", dev.name, e)
+                    drv = IOSDriver(dev.id, dev.name, wda_port=WDA_BASE_PORT + 1 + dev.sort_order)
                 self._drivers[dev.id] = drv
+            if connect:
+                self.connect_async(dev.id)
+
+    def connect_async(self, device_id: str) -> None:
+        """Start a phone's runner in the background (takes up to ~90s for real phones)."""
+        drv = self._drivers.get(device_id)
+        if drv is None:
+            return
+        with self._lock:
+            if device_id in self._connecting:
+                return
+            self._connecting.add(device_id)
+
+        def work():
+            try:
+                drv.connect()
+                self.last_error.pop(device_id, None)
+                self.sync_media(device_id)
+            except Exception as e:
+                log.warning("Device %s offline: %s", drv.name, e)
+                self.last_error[device_id] = str(e)
+            finally:
+                with self._lock:
+                    self._connecting.discard(device_id)
+
+        threading.Thread(target=work, name=f"connect-{device_id}", daemon=True).start()
+
+    def remove(self, device_id: str) -> None:
+        drv = self._drivers.pop(device_id, None)
+        if drv is not None and hasattr(drv, "disconnect"):
+            try:
+                drv.disconnect()
+            except Exception:
+                pass
+
+    def shutdown(self) -> None:
+        for did in list(self._drivers):
+            self.remove(did)
 
     # ---- access ----------------------------------------------------------
     def driver(self, device_id: str) -> Driver | None:
@@ -90,9 +148,13 @@ class DeviceManager:
         if drv is None:
             return {"connected": False, "kind": "unknown"}
         try:
-            return drv.info()
+            info = drv.info()
         except Exception as e:
-            return {"connected": False, "kind": drv.kind, "error": str(e)}
+            info = {"connected": False, "kind": drv.kind, "error": str(e)}
+        info["connecting"] = device_id in self._connecting
+        if device_id in self.last_error:
+            info["error"] = self.last_error[device_id]
+        return info
 
     # ---- camera roll mirror ---------------------------------------------
     def sync_media(self, device_id: str) -> int:
@@ -105,10 +167,11 @@ class DeviceManager:
         thumb_dir = THUMB_DIR / device_id
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
+        thumbs_made = 0
         with session_scope() as s:
             existing = {m.filename: m for m in s.query(MediaItem).filter_by(device_id=device_id).all()}
             seen: set[str] = set()
-            for it in items:
+            for it in items:  # newest first, so the most relevant items get thumbnails first
                 seen.add(it.filename)
                 row = existing.get(it.filename)
                 if row is None:
@@ -120,15 +183,21 @@ class DeviceManager:
                 row.created_at = it.created_at
                 row.present = True
                 row.last_seen = now
-                if not row.thumb_path:
+                if not row.thumb_path and thumbs_made < MAX_THUMBS_PER_SYNC:
                     key = hashlib.sha1(f"{device_id}:{it.filename}".encode()).hexdigest()[:16]
                     out = thumb_dir / f"{key}.jpg"
                     if not out.exists():
-                        data = drv.thumbnail(it.filename)
+                        thumbs_made += 1  # counts pulls, so a huge roll is thumbnailed over several syncs
+                        try:
+                            data = drv.thumbnail(it.filename)
+                        except Exception as e:
+                            log.warning("thumb %s failed: %s", it.filename, e)
+                            data = None
                         if data:
                             out.write_bytes(data)
                     if out.exists():
                         row.thumb_path = str(out)
+                    s.flush()
             for fname, row in existing.items():
                 if fname not in seen and row.present:
                     row.present = False

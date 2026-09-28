@@ -37,6 +37,8 @@ export interface Device {
   paused: boolean;
   sort_order: number;
   connected: boolean;
+  connecting: boolean;
+  error: string;
   busy: boolean;
   current_job_id: number | null;
   accounts: Account[];
@@ -144,6 +146,9 @@ export const api = {
   patchDevice: (id: string, body: Partial<Device>) =>
     req<Device>(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   syncDevice: (id: string) => req<Media[]>(`/devices/${id}/sync`, { method: "POST" }),
+  discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),
+  connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
+  deleteDevice: (id: string) => req<{ ok: true }>(`/devices/${id}`, { method: "DELETE" }),
   media: (deviceId: string) => req<Media[]>(`/devices/${deviceId}/media`),
 
   createAccount: (body: { device_id: string; platform: Platform; handle: string; story_link?: string }) =>

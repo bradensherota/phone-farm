@@ -1,48 +1,84 @@
-"""Real iPhone driver (to be completed on the Mac that has Xcode).
+"""Real iPhone driver, over USB.
 
-Planned stack, all over USB:
-  * pymobiledevice3  - device discovery, developer-mode tunnel (iOS 17+), AFC access
-                       to /DCIM for a read-only camera roll listing, screenshots.
-  * WebDriverAgent   - XCUITest runner installed once per phone from Xcode. Exposes the
-                       accessibility tree of the frontmost app so flows tap by label
-                       ("Your story", "Add link", "Share") instead of pixel coordinates.
-  * facebook-wda     - thin Python client for WebDriverAgent (no Appium server needed).
+Pieces:
+  * pymobiledevice3  - discovery (usbmux), camera roll listing + pulls via AFC (/DCIM),
+                       and a TCP forward from a local port to WebDriverAgent's 8100 on the phone.
+  * WebDriverAgent   - XCUITest runner built once per Mac (~/PhoneFarm/wda-build). Started per
+                       phone with `xcodebuild test-without-building`, which keeps it alive.
+  * facebook-wda     - HTTP client for WebDriverAgent used by the flows.
 
-Each phone gets its own WDA port. The scheduler already runs one worker per device,
-so parallel phones just work once this class is filled in.
-
-Flow scripts (post_reel / post_story / ...) will live in ios_flows/ and be written
-against the real apps with the phones in hand, since exact labels change with app
-updates and have to be verified on-device.
+Each phone gets its own local port (8100 + slot) so several phones run in parallel.
 """
 
 from __future__ import annotations
 
+import glob
+import io
+import json
+import logging
+import os
+import signal
+import subprocess
+import tempfile
+import threading
+import time
+import urllib.request
 from datetime import datetime
+from pathlib import Path
 
+from .. import config
 from .base import ActionResult, ActionSpec, Driver, LogFn, RollItem
+
+log = logging.getLogger("farm.ios")
+
+VIDEO_EXT = {".mov", ".mp4", ".m4v"}
+PHOTO_EXT = {".jpg", ".jpeg", ".heic", ".heif", ".png", ".dng"}
+MAX_THUMB_PULL_BYTES = 400 * 1024 * 1024  # skip thumbnailing videos bigger than this
+
+MODEL_NAMES = {
+    "iPhone14,5": "iPhone 13", "iPhone14,4": "iPhone 13 mini", "iPhone14,2": "iPhone 13 Pro", "iPhone14,3": "iPhone 13 Pro Max",
+    "iPhone14,7": "iPhone 14", "iPhone14,8": "iPhone 14 Plus", "iPhone15,2": "iPhone 14 Pro", "iPhone15,3": "iPhone 14 Pro Max",
+    "iPhone15,4": "iPhone 15", "iPhone15,5": "iPhone 15 Plus", "iPhone16,1": "iPhone 15 Pro", "iPhone16,2": "iPhone 15 Pro Max",
+    "iPhone17,3": "iPhone 16", "iPhone17,4": "iPhone 16 Plus", "iPhone17,1": "iPhone 16 Pro", "iPhone17,2": "iPhone 16 Pro Max",
+    "iPhone18,1": "iPhone 17 Pro", "iPhone18,2": "iPhone 17 Pro Max", "iPhone18,3": "iPhone 17", "iPhone18,4": "iPhone Air",
+}
+
+
+def _pmd3() -> str:
+    """Path to the pymobiledevice3 CLI inside our venv."""
+    return str(Path(__file__).resolve().parents[2] / ".venv" / "bin" / "pymobiledevice3")
+
+
+def _run(args: list[str], timeout: float = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
 def discover_ios_devices() -> list[dict]:
-    """UDIDs + names of iPhones currently connected over USB. Empty if the ios extra isn't installed."""
+    """iPhones currently connected over USB (Wi-Fi-only entries are ignored)."""
     try:
-        from pymobiledevice3.usbmux import list_devices  # type: ignore
-        from pymobiledevice3.lockdown import create_using_usbmux  # type: ignore
-    except Exception:
+        out = _run([_pmd3(), "usbmux", "list"], timeout=20)
+        rows = json.loads(out.stdout or "[]")
+    except Exception as e:
+        log.debug("discovery failed: %s", e)
         return []
     found = []
-    for d in list_devices():
-        try:
-            ld = create_using_usbmux(d.serial)
-            found.append({
-                "udid": d.serial,
-                "name": ld.get_value(key="DeviceName") or d.serial,
-                "model": ld.product_type,
-                "ios": ld.product_version,
-            })
-        except Exception:
-            found.append({"udid": d.serial, "name": d.serial, "model": "", "ios": ""})
+    for r in rows:
+        if r.get("ConnectionType") != "USB" or r.get("DeviceClass") != "iPhone":
+            continue
+        udid = r.get("UniqueDeviceID") or r.get("Identifier")
+        pt = r.get("ProductType", "")
+        found.append({
+            "udid": udid,
+            "name": r.get("DeviceName") or MODEL_NAMES.get(pt, pt) or udid,
+            "model": MODEL_NAMES.get(pt, pt),
+            "ios": r.get("ProductVersion", ""),
+        })
     return found
+
+
+def find_xctestrun() -> str | None:
+    hits = sorted(glob.glob(str(config.WDA_BUILD_DIR / "Build" / "Products" / "WebDriverAgentRunner_iphoneos*.xctestrun")))
+    return hits[-1] if hits else None
 
 
 class IOSDriver(Driver):
@@ -51,28 +87,174 @@ class IOSDriver(Driver):
     def __init__(self, device_id: str, name: str, wda_port: int):
         super().__init__(device_id, name)
         self.wda_port = wda_port
-        self._client = None
+        self.base = f"http://127.0.0.1:{wda_port}"
+        self._xcodebuild: subprocess.Popen | None = None
+        self._forward: subprocess.Popen | None = None
+        self._lock = threading.Lock()
+        self._log_path = config.DATA_DIR / "logs" / f"wda-{device_id}.log"
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # ---- lifecycle -------------------------------------------------------
     def connect(self) -> None:
-        raise RuntimeError(
-            "iOS driver not implemented yet. Requires Xcode + WebDriverAgent signed onto this phone."
-        )
+        with self._lock:
+            if self._status_ok():
+                return
+            xctestrun = find_xctestrun()
+            if not xctestrun:
+                raise RuntimeError("WebDriverAgent is not built. See README: build it once into ~/PhoneFarm/wda-build.")
+            self._stop_processes()
+            logf = open(self._log_path, "ab")
+            self._forward = subprocess.Popen(
+                [_pmd3(), "usbmux", "forward", str(self.wda_port), "8100", "--udid", self.device_id],
+                stdout=logf, stderr=logf,
+            )
+            self._xcodebuild = subprocess.Popen(
+                ["xcrun", "xcodebuild", "test-without-building", "-xctestrun", xctestrun,
+                 "-destination", f"id={self.device_id}"],
+                cwd=str(config.WDA_BUILD_DIR), stdout=logf, stderr=logf, start_new_session=True,
+            )
+            deadline = time.time() + 90
+            while time.time() < deadline:
+                if self._status_ok():
+                    log.info("%s: WebDriverAgent up on port %d", self.name, self.wda_port)
+                    return
+                if self._xcodebuild.poll() is not None:
+                    raise RuntimeError(f"xcodebuild exited early (see {self._log_path})")
+                time.sleep(2)
+            raise RuntimeError("WebDriverAgent did not come up within 90s")
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self._stop_processes()
+
+    def _stop_processes(self) -> None:
+        for p in (self._xcodebuild, self._forward):
+            if p and p.poll() is None:
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGTERM) if p is self._xcodebuild else p.terminate()
+                    p.wait(timeout=10)
+                except Exception:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+        self._xcodebuild = None
+        self._forward = None
 
     def is_connected(self) -> bool:
-        return self._client is not None
+        return self._status_ok()
 
+    def _status_ok(self) -> bool:
+        try:
+            with urllib.request.urlopen(self.base + "/status", timeout=3) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    def _get(self, path: str, timeout: float = 20) -> dict:
+        with urllib.request.urlopen(self.base + path, timeout=timeout) as r:
+            return json.loads(r.read())
+
+    def _post(self, path: str, body: dict | None = None, timeout: float = 30) -> dict:
+        data = json.dumps(body or {}).encode()
+        req = urllib.request.Request(self.base + path, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+
+    def info(self) -> dict:
+        return {"kind": self.kind, "connected": self.is_connected(), "wda_port": self.wda_port}
+
+    # ---- screen ----------------------------------------------------------
     def screenshot(self) -> bytes:
-        raise NotImplementedError
+        import base64
+        d = self._get("/screenshot", timeout=20)
+        return base64.b64decode(d["value"])
+
+    def wake(self) -> None:
+        try:
+            if self._get("/wda/locked").get("value"):
+                self._post("/wda/unlock")
+        except Exception as e:
+            log.warning("%s: wake failed: %s", self.name, e)
+
+    # ---- camera roll (read-only, over AFC) ------------------------------
+    # pymobiledevice3's services are async; each call below runs its own short event loop.
+
+    def _afc(self, coro_fn):
+        import asyncio
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.afc import AfcService
+
+        async def go():
+            ld = await create_using_usbmux(self.device_id)
+            afc = AfcService(ld)
+            try:
+                return await coro_fn(afc)
+            finally:
+                try:
+                    await afc.aclose()
+                except Exception:
+                    pass
+        return asyncio.run(go())
 
     def list_camera_roll(self) -> list[RollItem]:
-        # Plan: AFC walk of /DCIM/*APPLE, files sorted by mtime desc. Read-only.
-        raise NotImplementedError
+        async def go(afc):
+            items: list[RollItem] = []
+            for album in await afc.listdir("/DCIM"):
+                if "APPLE" not in album.upper():
+                    continue
+                for name in await afc.listdir(f"/DCIM/{album}"):
+                    ext = Path(name).suffix.lower()
+                    kind = "video" if ext in VIDEO_EXT else "photo" if ext in PHOTO_EXT else None
+                    if not kind:
+                        continue
+                    try:
+                        st = await afc.stat(f"/DCIM/{album}/{name}")
+                    except Exception:
+                        continue
+                    if st.get("st_ifmt") != "S_IFREG":
+                        continue
+                    created = st.get("st_birthtime") or st.get("st_mtime") or datetime.now()
+                    items.append(RollItem(
+                        filename=f"{album}/{name}", kind=kind,
+                        created_at=created, size_bytes=int(st.get("st_size", 0) or 0),
+                    ))
+            items.sort(key=lambda r: r.created_at, reverse=True)
+            return items
+        return self._afc(go)
 
     def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
-        raise NotImplementedError
+        ext = Path(filename).suffix.lower()
 
-    def run_action(self, spec: ActionSpec, log: LogFn) -> ActionResult:
-        raise NotImplementedError
+        async def go(afc):
+            st = await afc.stat(f"/DCIM/{filename}")
+            if ext in VIDEO_EXT and int(st.get("st_size", 0) or 0) > MAX_THUMB_PULL_BYTES:
+                return None
+            return await afc.get_file_contents(f"/DCIM/{filename}")
+
+        data = self._afc(go)
+        if not data:
+            return None
+        with tempfile.TemporaryDirectory() as td:
+            local = Path(td) / Path(filename).name
+            local.write_bytes(data)
+            from .simulated import _image_thumb, _video_thumb
+            return _video_thumb(local, max_px) if ext in VIDEO_EXT else _image_thumb(local, max_px)
+
+    # ---- actions ---------------------------------------------------------
+    def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:
+        from . import ios_flows
+        self.wake()
+        try:
+            return ios_flows.run(self, spec, log_fn)
+        except Exception as e:
+            log.exception("%s: flow failed", self.name)
+            shot = None
+            try:
+                shot = self.screenshot()
+            except Exception:
+                pass
+            return ActionResult(False, f"{type(e).__name__}: {e}", shot)
 
 
-__all__ = ["IOSDriver", "discover_ios_devices", "datetime"]
+__all__ = ["IOSDriver", "discover_ios_devices", "find_xctestrun", "io"]

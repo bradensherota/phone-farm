@@ -35,6 +35,8 @@ def device_out(s: Session, d: Device) -> DeviceOut:
     media_count = s.query(func.count(MediaItem.id)).filter(MediaItem.device_id == d.id, MediaItem.present.is_(True)).scalar()
     out = DeviceOut.model_validate(d)
     out.connected = bool(info.get("connected"))
+    out.connecting = bool(info.get("connecting"))
+    out.error = str(info.get("error") or "")
     out.busy = d.id in runner.busy
     out.current_job_id = runner.current.get(d.id)
     out.media_count = media_count or 0
@@ -46,6 +48,38 @@ def device_out(s: Session, d: Device) -> DeviceOut:
 def list_devices(s: Session = Depends(get_session)):
     devices = s.query(Device).options(selectinload(Device.accounts)).order_by(Device.sort_order).all()
     return [device_out(s, d) for d in devices]
+
+
+@router.post("/discover", response_model=list[DeviceOut])
+def discover(s: Session = Depends(get_session)):
+    """Look for iPhones plugged in over USB, register new ones, and start their runners."""
+    manager.load(connect=True)
+    return list_devices(s)
+
+
+@router.post("/{device_id}/connect", response_model=DeviceOut)
+def connect_device(device_id: str, s: Session = Depends(get_session)):
+    d = s.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+    if manager.driver(device_id) is None:
+        manager.load(connect=False)
+    manager.last_error.pop(device_id, None)
+    manager.connect_async(device_id)
+    return device_out(s, d)
+
+
+@router.delete("/{device_id}")
+def delete_device(device_id: str, s: Session = Depends(get_session)):
+    d = s.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+    if device_id in runner.busy:
+        raise HTTPException(409, "phone is posting right now")
+    manager.remove(device_id)
+    s.delete(d)
+    s.commit()
+    return {"ok": True}
 
 
 @router.get("/{device_id}", response_model=DeviceOut)

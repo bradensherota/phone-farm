@@ -73,6 +73,8 @@ class DeviceOut(ORM):
     paused: bool
     sort_order: int
     connected: bool = False
+    connecting: bool = False
+    error: str = ""
     busy: bool = False
     current_job_id: int | None = None
     accounts: list[AccountOut] = Field(default_factory=list)

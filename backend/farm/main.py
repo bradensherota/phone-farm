@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     finally:
         sync_task.cancel()
         await runner.stop()
+        manager.shutdown()  # stops each phone's runner + port forward
 
 
 app = FastAPI(title="Phone Farm", lifespan=lifespan)

@@ -30,6 +30,7 @@ export default function DevicesPage() {
         <div className="stats">
           <div className="stat"><span className="dim small">Today</span><b>{totals.done}/{totals.total}</b></div>
           <div className="stat"><span className="dim small">Failed</span><b style={{ color: totals.failed ? "var(--red)" : undefined }}>{totals.failed}</b></div>
+          <button className="btn" onClick={async () => { await api.discoverDevices(); toast("Looking for phones over USB…"); reload(); }}>Find phones</button>
           <button className={`btn ${enabled ? "" : "primary"}`} onClick={toggleRunner}>{enabled ? "Pause runner" : "Resume runner"}</button>
         </div>
       </div>
@@ -49,6 +50,8 @@ export default function DevicesPage() {
                     {d.paused && <Pill kind="paused">paused</Pill>}
                   </div>
                   <div className="small dim">{d.model} · {d.kind === "sim" ? "simulated" : "USB"} · routine {d.routine_start}</div>
+                  {d.connecting && <div className="small" style={{ color: "var(--amber)" }}>Starting runner…</div>}
+                  {d.error && !d.connecting && <div className="small" style={{ color: "var(--red)" }}>{d.error}</div>}
                   <div className="small dim">{d.media_count} items in camera roll</div>
                   <div className="acct-list">
                     {d.accounts.map((a) => (

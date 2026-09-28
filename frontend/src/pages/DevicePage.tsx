@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { Account, Device, Job, Media, Platform } from "../lib/api";
 import { actionMeta, api, fmtDateTime, ymd } from "../lib/api";
 import { PhoneScreen, Pill, PlatformIcon, StatusDot, usePoll, useToast } from "../components/common";
@@ -40,6 +40,7 @@ export default function DevicePage() {
 
 function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
+  const nav = useNavigate();
   const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s });
   useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s]);
   const dirty = form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s;
@@ -51,6 +52,15 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
     toast(device.paused ? "Phone resumed" : "Phone paused. Its queue will wait.");
     onChanged();
   };
+  const reconnect = async () => {
+    await api.connectDevice(device.id);
+    toast("Starting the phone's runner… takes up to a minute");
+    onChanged();
+  };
+  const remove = async () => {
+    if (!confirm(`Remove ${device.name} and all of its accounts and planned posts?`)) return;
+    try { await api.deleteDevice(device.id); toast("Removed"); nav("/"); } catch (e: any) { toast(e.message, "err"); }
+  };
   return (
     <div className="page-head">
       <div>
@@ -58,10 +68,16 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
           <StatusDot connected={device.connected} busy={device.busy} />
           <h1>{device.name}</h1>
           {device.paused && <Pill kind="paused">paused</Pill>}
+          {device.connecting && <Pill kind="running">connecting…</Pill>}
         </div>
         <div className="sub">{device.model} · {device.kind === "sim" ? "simulated phone" : "USB"} · {device.id}</div>
+        {device.error && !device.connecting && <div className="sub" style={{ color: "var(--red)" }}>{device.error}</div>}
       </div>
       <div className="row">
+        {device.kind === "ios" && !device.connected && (
+          <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button></div>
+        )}
+        <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
         <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>
         <div className="field"><label>Gap between actions (s)</label>
           <div className="row">

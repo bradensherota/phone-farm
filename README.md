@@ -69,16 +69,44 @@ data/               SQLite db, thumbnails, screenshots (ignored by git)
 sim_media/          fake camera rolls for simulated phones (ignored by git)
 ```
 
-## Wiring in real iPhones (next phase, needs Xcode)
+## Real iPhones
 
-1. Apple Developer account (paid, so the runner signs for a year).
-2. Install Xcode, enable Developer Mode on each phone, build and install
-   WebDriverAgent on each one, one port per phone.
-3. Fill in `devices/ios.py`: discovery via `pymobiledevice3`, roll listing from
-   `/DCIM` over AFC, screenshots, and `run_action` dispatching to flow scripts.
-4. Write the flows against the live apps: switch account, reel, story with link
-   sticker, TikTok post/story, X post. Verify labels on-device; they change with app
-   updates.
-5. Replace the seeded simulated devices with the real UDIDs (or keep both).
+Done once per Mac:
 
-The planner, scheduler, activity log, and UI don't change for this step.
+1. Xcode installed, opened once, signed into the developer Apple ID (Settings, Accounts),
+   and selected for the command line: `sudo xcode-select -s /Applications/Xcode.app`.
+2. Build WebDriverAgent **outside iCloud-synced folders** (Desktop/Documents add file
+   attributes that make code signing fail with "resource fork, Finder information, or
+   similar detritus"). The app expects it at `~/PhoneFarm`:
+
+   ```bash
+   mkdir -p ~/PhoneFarm && cd ~/PhoneFarm
+   git clone --depth 1 https://github.com/appium/WebDriverAgent.git
+   cd WebDriverAgent
+   xcodebuild -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner \
+     -destination "id=<UDID of any plugged-in phone>" \
+     -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+     -derivedDataPath ~/PhoneFarm/wda-build \
+     DEVELOPMENT_TEAM=<your 10-char Team ID> \
+     PRODUCT_BUNDLE_IDENTIFIER=com.<you>.WebDriverAgentRunner \
+     build-for-testing
+   ```
+
+   Team ID is on developer.apple.com/account under Membership details.
+
+Per phone:
+
+1. Developer Mode on (Settings, Privacy & Security), Auto-Lock Never, automatic iOS and
+   App Store updates off. Plug in over USB, tap Trust.
+2. First time only, install the runner:
+   `xcrun devicectl device install app --device <UDID> ~/PhoneFarm/wda-build/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app`
+   (a new phone also has to be added to the provisioning profile: rerun the build
+   above once with that phone as the destination).
+3. Launch the app. It finds the phone over USB, starts its runner (one local port per
+   phone, 8101 and up), reads the camera roll, and shows the live screen. "Find phones"
+   on the Phones page rescans without restarting.
+
+Under the hood: `devices/ios.py` keeps one `xcodebuild test-without-building` process and
+one `pymobiledevice3 usbmux forward` per phone, talks to WebDriverAgent over HTTP, and
+reads `/DCIM` over AFC. Posting flows live in `devices/ios_flows.py` and are written
+against the live apps; labels change with app updates, so expect touch-ups.

@@ -446,6 +446,7 @@ def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
         return sorted(out)
 
     target = None
+    found_n = index
     # total == 0 means an album grid: short, no scrubbing
     scrubs = 0
     for _ in range(40):
@@ -487,6 +488,7 @@ def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
                 if c and _label_matches(c.label, date_part, dur_part, spec.media_kind):
                     p.log("info", f"Using Recents #{n + 1} instead: {c.label}")
                     target = c
+                    found_n = n
                     break
             if target is not None:
                 break
@@ -496,8 +498,45 @@ def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
     if target is None:
         raise FlowError(f"Recents #{index + 1} not found in Instagram's gallery after scrolling")
     p.log("info", f"Pick: {target.label}")
-    target.tap()
-    time.sleep(2.5)
+    _tap_gallery_cell(p, target, lambda: cell(found_n))
+
+
+def _tap_gallery_cell(p: Phone, target, refind) -> None:
+    """Tap a gallery cell where a finger would land. A cell in the bottom row sits under
+    Instagram's mode bar and an element tap there does nothing, so bring it fully into view
+    and tap its centre by coordinates; then confirm the gallery actually opened the item."""
+    H = p.window_height()
+
+    def centre(e):
+        r = e.bounds
+        return r, int(r.x + r.width / 2), int(r.y + r.height / 2)
+
+    r, x, y = centre(target)
+    if r.y < 90 or r.y + r.height > H - 130:
+        p.log("info", "Scroll the item fully into view")
+        try:
+            target.scroll("visible")
+        except Exception:
+            p.flick("up", strength=0.3)
+        time.sleep(0.8)
+        target = refind() or target
+        r, x, y = centre(target)
+        if r.y + r.height > H - 130:
+            p.flick("up", strength=0.3)
+            time.sleep(0.8)
+            target = refind() or target
+            r, x, y = centre(target)
+    for attempt in range(3):
+        p.log("info", f"Tap item at ({x},{y})" if attempt == 0 else f"Item didn't open; tapping again ({attempt + 1}/3)")
+        p.s.tap(x, y)
+        time.sleep(2.5)
+        opened = (p.exists(name="sundial-right-chevron-next-button", timeout=2) or p.exists(name="story-trimmer-done-button", timeout=0.5)
+                  or p.exists(name="share-to-your-story", timeout=0.5) or not p.exists(name="gallery-header-title", timeout=1))
+        if opened:
+            return
+        target = refind() or target
+        r, x, y = centre(target)
+    raise FlowError("Tapped the planned item but Instagram stayed on the gallery")
 
 
 def ig_add_link_sticker(p: Phone, link: str, link_text: str) -> None:

@@ -109,8 +109,9 @@ def sleep_device(device_id: str):
     drv = manager.driver(device_id)
     if drv is None or not hasattr(drv, "sleep"):
         raise HTTPException(404, "no runner for this phone")
-    drv.sleep()
-    return {"locked": bool(getattr(drv, "is_locked", lambda: False)())}
+    err = drv.sleep() or ""
+    locked = bool(getattr(drv, "is_locked", lambda: False)())
+    return {"locked": locked, "error": "" if locked else (err or "screen did not lock")}
 
 
 @router.post("/{device_id}/prepare")

@@ -95,8 +95,8 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         )}
         {device.kind === "ios" && device.connected && (
           <div className="field"><label>Screen</label><div className="row">
-            <button className="btn sm" onClick={async () => { const r = await api.sleepDevice(device.id); toast(r.locked ? "Locked" : "Could not lock", r.locked ? "ok" : "err"); }}>Lock now</button>
-            <button className="btn sm" onClick={async () => { toast("Waking…"); const r = await api.wakeDevice(device.id); toast(r.locked ? "Still locked" : "Awake and unlocked", r.locked ? "err" : "ok"); }}>Wake</button>
+            <button className="btn sm" title="Lock the screen, exactly what the runner does after the day's last job" onClick={async () => { toast("Putting the phone to sleep…"); const r = await api.sleepDevice(device.id); toast(r.locked ? "Asleep (screen locked)" : `Could not sleep: ${r.error || "screen did not lock"}`, r.locked ? "ok" : "err"); }}>Sleep</button>
+            <button className="btn sm" onClick={async () => { toast("Waking…"); const r = await api.wakeDevice(device.id); toast(r.locked ? "Still locked" : "Awake and unlocked", r.locked ? "err" : "ok"); }} title="Wake and unlock, exactly what the runner does before the first job">Wake</button>
           </div></div>
         )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>

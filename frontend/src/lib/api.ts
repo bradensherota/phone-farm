@@ -160,7 +160,7 @@ export const api = {
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
   runDay: (id: string, run_date: string) => req<{ started: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
   wakeDevice: (id: string) => req<{ locked: boolean }>(`/devices/${id}/wake`, { method: "POST" }),
-  sleepDevice: (id: string) => req<{ locked: boolean }>(`/devices/${id}/sleep`, { method: "POST" }),
+  sleepDevice: (id: string) => req<{ locked: boolean; error?: string }>(`/devices/${id}/sleep`, { method: "POST" }),
   clearQueue: (id: string) => req<{ cleared: boolean }>(`/devices/${id}/queue/clear`, { method: "POST" }),
   deleteDevice: (id: string) => req<{ ok: true }>(`/devices/${id}`, { method: "DELETE" }),
   media: (deviceId: string) => req<Media[]>(`/devices/${deviceId}/media`),

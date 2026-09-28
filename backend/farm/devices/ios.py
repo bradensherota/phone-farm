@@ -322,16 +322,38 @@ class IOSDriver(Driver):
             time.sleep(0.3)
         time.sleep(2.5)
 
-    def sleep(self) -> None:
-        """Lock the screen so the phone can rest between routines. A fresh standby session is
-        opened first so the next wake can drive the lock screen."""
+    def sleep(self) -> str:
+        """Lock the screen so the phone can rest between routines (the "sleep" step at the end
+        of every day's queue). A fresh standby session is opened first so the next wake can
+        drive the lock screen. Returns "" when the phone is locked, else the reason it isn't."""
         try:
-            if not self.is_locked():
-                self._new_standby_session()
-                log.info("%s: locking screen", self.name)
-                self._post("/wda/lock", timeout=15)
+            if self.is_locked():
+                return ""
+            sid = self._new_standby_session()
+            log.info("%s: locking screen", self.name)
+            err = ""
+            try:
+                self._post("/wda/lock", timeout=8)
+            except Exception as e:
+                err = str(e)
+            if self.is_locked():
+                return ""
+            # Face ID phones on iOS 26 ignore WDA's lock command; press the side button instead.
+            if sid:
+                log.info("%s: lock command didn't lock (%s); pressing the side button", self.name, err or "no change")
+                try:
+                    self._post(f"/session/{sid}/wda/performIoHidEvent", {"page": 0x0C, "usage": 0x30, "duration": 0.5}, timeout=15)
+                    time.sleep(1.5)
+                except Exception as e:
+                    err = str(e)
+            if self.is_locked():
+                return ""
+            err = err or "screen did not lock"
+            log.warning("%s: lock failed: %s", self.name, err)
+            return err
         except Exception as e:
             log.warning("%s: lock failed: %s", self.name, e)
+            return str(e)
 
     # ---- camera roll (read-only, over AFC) ------------------------------
     # pymobiledevice3's services are async; each call below runs its own short event loop.

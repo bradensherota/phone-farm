@@ -54,6 +54,14 @@ opens Instagram's gallery, flicks to the planned position, and verifies the cell
 label (photo/video, capture date, duration) before tapping; if it doesn't match it
 probes the neighbouring cells. Thumbnails are the only thing pulled file by file.
 
+**Story album (recommended).** Make a Photos album on each phone (default name
+`Stories`, editable on the phone page) and add the content you plan to post to it when
+you sit down to schedule. The app reads album membership from the same index; the picker
+marks those items and filters to them. For any item in the album, the flow switches
+Instagram's gallery to that album (Recents dropdown, All albums, the album) and picks by
+position in a list of a dozen instead of scrolling a roll of hundreds. Items not in the
+album still work via Recents.
+
 ## Layout
 
 ```

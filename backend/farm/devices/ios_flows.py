@@ -672,8 +672,15 @@ def ig_story(p: Phone, spec: ActionSpec):
             p.log("info", "DRY RUN: stopping before 'Share to your story'")
             return True, "Dry run reached Share to your story"
         p.tap(name="share-to-your-story", what="Share to your story", pause=2)
-        p.wait(name="story-tray-add-button", what="feed after sharing", timeout=40)
-        return True, "Story shared"
+        # Instagram drops back to whatever tab the story was started from (the profile when
+        # started from the profile picture); stories never show on the feed itself.
+        for _ in range(40):
+            if not p.exists(name="share-to-your-story", timeout=1) and (
+                p.exists(name="profile-tab", timeout=1) or p.exists(name="mainfeed-tab", timeout=0.5)
+            ):
+                return True, "Story shared"
+            time.sleep(1)
+        raise FlowError("Story editor did not close after Share")
 
     return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
 

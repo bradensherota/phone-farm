@@ -41,9 +41,23 @@ class Phone:
         self.s: wda.Session | None = None
 
     # ---- app ---------------------------------------------------------------
+    # Snapshotting a huge view tree (TikTok's feed) can freeze both the app and the runner
+    # for tens of seconds. Capping depth and snapshot time keeps queries cheap.
+    WDA_SETTINGS = {"snapshotMaxDepth": 30, "customSnapshotTimeout": 15, "waitForIdleTimeout": 3,
+                    "animationCoolOffTimeout": 1, "shouldUseCompactResponses": True}
+
+    def apply_settings(self) -> None:
+        if self.s is None:
+            return
+        try:
+            self.c.http.post(f"/session/{self.s.session_id}/appium/settings", {"settings": self.WDA_SETTINGS})
+        except Exception as e:
+            self.log("warn", f"Could not apply runner settings: {e}")
+
     def open(self, bundle_id: str) -> None:
         self.log("info", f"Open {bundle_id}")
         self.s = self.c.session(bundle_id)
+        self.apply_settings()
         time.sleep(2.5)
 
     def home(self) -> None:
@@ -51,6 +65,40 @@ class Phone:
             self.c.home()
         except Exception:
             pass
+
+    def release_touches(self) -> None:
+        """Make sure no synthetic finger is left pressed on the glass (a held touch makes the
+        phone ignore real taps and later automation taps until it clears)."""
+        if self.s is None:
+            return
+        try:
+            self.c.http.delete(f"/session/{self.s.session_id}/actions")  # W3C: release all pressed inputs
+        except Exception:
+            pass
+        try:
+            # belt and braces: a clean tap-and-lift on an empty spot of the status bar area
+            self.c.http.post(f"/session/{self.s.session_id}/actions", {"actions": [
+                {"type": "pointer", "id": "finger1", "parameters": {"pointerType": "touch"}, "actions": [
+                    {"type": "pointerMove", "duration": 0, "x": 195, "y": 20},
+                    {"type": "pointerDown", "button": 0}, {"type": "pause", "duration": 30}, {"type": "pointerUp", "button": 0}]}]})
+        except Exception:
+            pass
+
+    def close(self, terminate_app: bool = False) -> None:
+        """Release touches and end the runner's session with the app. By default the app is
+        left running (WebDriverAgent would otherwise terminate it with the session)."""
+        self.release_touches()
+        if self.s is None:
+            return
+        try:
+            if terminate_app:
+                self.s.close()
+            else:
+                # detach without killing the app: start a bare session (no bundle) and drop it
+                self.c.session()
+        except Exception:
+            pass
+        self.s = None
 
     # ---- finding -----------------------------------------------------------
     def el(self, *, name: str | None = None, label: str | None = None, predicate: str | None = None):
@@ -550,9 +598,88 @@ def ig_reel(p: Phone, spec: ActionSpec):
     raise FlowError("Did not return to the feed after Share")
 
 
+# ---- TikTok -----------------------------------------------------------------------
+# Mapped on-device 2026-09-28. Path: Create (+) -> Upload (bottom left) -> "Recents"
+# dropdown top-middle to choose an album -> tap the item -> Next (TikTok may auto-add a
+# sound; let it settle) -> Next -> caption -> Post (top right).
+# TikTok's picker cells are unlabeled; only the duration overlay ("00:21") is a StaticText.
+# The album is laid out oldest-first, 3 per row, ending at the newest, so an item is found
+# by counting back from the end (the app knows the album's members and capture order),
+# then cross-checked against the duration overlay (video) or its absence (photo).
+
+def tt_select_album(p: Phone, title: str) -> None:
+    title = title.strip()
+    cur = p.el(predicate="type == 'XCUIElementTypeButton' AND (label == 'Recents' OR label CONTAINS 'Stories' OR label CONTAINS 'Queue')").wait(timeout=5, raise_error=False)
+    if cur and (cur.label or "").strip() == title:
+        return
+    p.log("info", f"TikTok: switch picker to album '{title}'")
+    if not cur:
+        raise FlowError("TikTok album dropdown not found")
+    cur.tap()
+    time.sleep(1.2)
+    p.tap(predicate=f"type == 'XCUIElementTypeStaticText' AND label BEGINSWITH '{title}'", what=f"album '{title}'", timeout=6)
+
+
+def tt_pick_cell(p: Phone, spec: ActionSpec, from_end: int, count: int) -> None:
+    """Tap the item that is `from_end` places before the newest (0 = newest) in an album of
+    `count` items, using the grid lattice, then verify with the duration overlay."""
+    durs = p.el(predicate="type == 'XCUIElementTypeStaticText' AND label MATCHES '^\\\\d\\\\d:\\\\d\\\\d$'").find_elements()
+    overlays = [(e.label, e.bounds) for e in durs]
+    if not overlays:
+        raise FlowError("TikTok gallery shows no cells (need at least one video in the album to read the grid)")
+    # lattice: 3 columns; overlays sit at the bottom-right inside their cell
+    cols = 3
+    xs = sorted({round(b.x + b.width) for _, b in overlays})
+    cell_w = 130.0
+    ys = sorted({round(b.y + b.height) for _, b in overlays})
+    pitch = min((b - a) for a, b in zip(ys, ys[1:])) if len(ys) > 1 else 103.0
+    bottom_row_y = ys[-1]  # bottom edge of the lowest visible row
+    last_index = count - 1
+    target = last_index - from_end
+    if target < 0:
+        raise FlowError("Item position is before the start of the album")
+    rows_up = last_index // cols - target // cols
+    col = target % cols
+    cy = bottom_row_y - rows_up * pitch - pitch / 2
+    cx = col * cell_w + cell_w / 2
+    # verification
+    want = None
+    if spec.media_kind == "video" and (spec.extra or {}).get("duration_s"):
+        sec = int(float(spec.extra["duration_s"]))
+        want = {f"{s // 60:02d}:{s % 60:02d}" for s in (sec - 1, sec, sec + 1) if s >= 0}
+    here = [lab for lab, b in overlays if abs((b.y + b.height) - (cy + pitch / 2)) < pitch / 2 and abs((b.x + b.width) - (cx + cell_w / 2)) < cell_w / 2]
+    if want is not None:
+        if not here or here[0] not in want:
+            raise FlowError(f"Cell {from_end + 1} from the end shows {here or 'no duration'}, expected {sorted(want)}; re-sync the album and re-plan")
+    elif here:
+        raise FlowError(f"Cell {from_end + 1} from the end is a video ({here[0]}) but a photo was planned")
+    if cy < 60:
+        raise FlowError("Planned item is scrolled out of view; keep the queue album short")
+    p.log("info", f"TikTok: pick cell {from_end + 1} from the end" + (f" ({here[0]})" if here else " (photo)"))
+    p.s.tap(int(cx), int(cy))
+    time.sleep(1.5)
+
+
 def tt_post(p: Phone, spec: ActionSpec):
+    if spec.media_index is None:
+        raise FlowError("No media chosen")
+    extra = spec.extra or {}
+    album = extra.get("album")
+    if not album or extra.get("album_from_end") is None:
+        raise FlowError("TikTok posts need the item in the queue or story album")
     p.open(BUNDLES["tiktok"])
-    return False, "TikTok post flow not written yet"
+    p.tap(predicate="label == 'Create' AND type == 'XCUIElementTypeButton'", what="Create (+)")
+    p.tap(label="Upload", what="Upload", timeout=15)
+    p.wait(label="Next", what="gallery", timeout=15)
+    tt_select_album(p, album)
+    time.sleep(1.0)
+    tt_pick_cell(p, spec, int(extra["album_from_end"]), int(extra.get("album_count") or 0))
+    p.tap(label="Next", what="Next (to editor)", timeout=15, pause=2)
+    # TikTok may detect no speech and auto-add a sound a few seconds in; let it settle
+    p.wait(label="Next", what="editor", timeout=30)
+    time.sleep(5)
+    p.tap(label="Next", what="Next (to caption)", timeout=15, pause=3)
+    return False, "TikTok post flow: caption/post screen not mapped yet"
 
 
 def tt_story(p: Phone, spec: ActionSpec):
@@ -575,6 +702,10 @@ FLOWS = {
 
 
 def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
+    if spec.platform == "tiktok":
+        # TikTok freezes and misbehaves when the harness attaches; drive it blind instead.
+        from .ios_blind import run_blind
+        return run_blind(driver, spec, log)
     phone = Phone(driver.base, log)
     fn = FLOWS.get(spec.action)
     if fn is None:
@@ -588,6 +719,9 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         shot = phone.screenshot()
     except Exception:
         pass
-    if ok:
-        phone.home()
+    try:
+        if ok:
+            phone.home()
+    finally:
+        phone.close()  # release any held touch, detach from the app
     return ActionResult(ok, message, shot)

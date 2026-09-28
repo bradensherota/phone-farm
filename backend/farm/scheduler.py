@@ -134,6 +134,9 @@ class Runner:
             log.exception("queue prepare failed for %s", device_id)
         finally:
             lock.release()
+            drv = self.manager.driver(device_id)
+            if drv is not None and hasattr(drv, "sleep") and device_id not in self.busy:
+                drv.sleep()
 
     def _spawn_worker(self, device_id: str) -> None:
         if device_id in self.busy:
@@ -179,6 +182,13 @@ class Runner:
             self.busy.discard(device_id)
             self.current.pop(device_id, None)
             self._workers.pop(device_id, None)
+            # queue done: let the phone go back to sleep until the next routine
+            drv = self.manager.driver(device_id)
+            if drv is not None and hasattr(drv, "sleep"):
+                try:
+                    await asyncio.to_thread(drv.sleep)
+                except Exception:
+                    pass
 
     # ---- one job ---------------------------------------------------------
     def _execute(self, device_id: str, job_id: int) -> None:
@@ -230,7 +240,10 @@ class Runner:
                     "filename": media.filename if media else None,
                     "roll_total": s.query(MediaItem).filter(MediaItem.device_id == device_id, MediaItem.present.is_(True)).count(),
                     "album": album,
-                    "album_index": album_index,
+                    "album_index": album_index,  # newest-first position (Instagram's album order)
+                    "album_count": _album_count(s, device_id, album) if album else None,
+                    # oldest-first grids (TikTok): places before the newest item, 0 = newest
+                    "album_from_end": album_index,
                 },
             )
             attempt = job.attempts
@@ -349,6 +362,11 @@ def _album_index(s: Session, device_id: str, album: str, media: MediaItem) -> in
                 return i
             i += 1
     return None
+
+
+def _album_count(s: Session, device_id: str, album: str) -> int:
+    rows = s.query(MediaItem.albums).filter(MediaItem.device_id == device_id, MediaItem.present.is_(True)).all()
+    return sum(1 for (albums,) in rows if album in [t for t in (albums or "").split("|") if t])
 
 
 def _media_index(s: Session, device_id: str, media: MediaItem) -> int | None:

@@ -171,12 +171,46 @@ class IOSDriver(Driver):
         d = self._get("/screenshot", timeout=20)
         return base64.b64decode(d["value"])
 
-    def wake(self) -> None:
+    def is_locked(self) -> bool:
         try:
-            if self._get("/wda/locked").get("value"):
-                self._post("/wda/unlock")
+            return bool(self._get("/wda/locked", timeout=5).get("value"))
+        except Exception:
+            return False
+
+    def wake(self) -> None:
+        """Wake and unlock the phone (no passcode on farm phones): home button, then a swipe up."""
+        try:
+            if not self.is_locked():
+                return
+            log.info("%s: waking", self.name)
+            self._post("/wda/pressButton", {"name": "home"}, timeout=10)
+            time.sleep(1.2)
+            if not self.is_locked():
+                return
+            sid = self._post("/session", {"capabilities": {}}, timeout=20).get("sessionId")
+            acts = [{"type": "pointerMove", "duration": 0, "x": 195, "y": 830}, {"type": "pointerDown", "button": 0},
+                    {"type": "pointerMove", "duration": 250, "x": 195, "y": 300}, {"type": "pointerUp", "button": 0}]
+            self._post(f"/session/{sid}/actions", {"actions": [{"type": "pointer", "id": "f1", "parameters": {"pointerType": "touch"}, "actions": acts}]}, timeout=15)
+            time.sleep(1.5)
+            try:
+                urllib.request.urlopen(urllib.request.Request(f"{self.base}/session/{sid}/actions", method="DELETE"), timeout=10).read()
+            except Exception:
+                pass
+            if self.is_locked():
+                self._post("/wda/unlock", timeout=25)
+            if self.is_locked():
+                log.warning("%s: still locked after wake attempts (passcode set?)", self.name)
         except Exception as e:
             log.warning("%s: wake failed: %s", self.name, e)
+
+    def sleep(self) -> None:
+        """Lock the screen so the phone can rest between routines. The runner keeps working while locked."""
+        try:
+            if not self.is_locked():
+                log.info("%s: locking screen", self.name)
+                self._post("/wda/lock", timeout=10)
+        except Exception as e:
+            log.warning("%s: lock failed: %s", self.name, e)
 
     # ---- camera roll (read-only, over AFC) ------------------------------
     # pymobiledevice3's services are async; each call below runs its own short event loop.
@@ -333,6 +367,7 @@ class IOSDriver(Driver):
                 phone.home()
             except Exception:
                 pass
+            phone.close()
 
     def remove_from_album(self, item, album: str, log_fn: LogFn) -> bool:
         from . import ios_flows, ios_photos
@@ -345,6 +380,7 @@ class IOSDriver(Driver):
                 phone.home()
             except Exception:
                 pass
+            phone.close()
 
     def clear_album(self, album: str, log_fn: LogFn) -> bool:
         from . import ios_flows, ios_photos
@@ -357,6 +393,7 @@ class IOSDriver(Driver):
                 phone.home()
             except Exception:
                 pass
+            phone.close()
 
     # ---- actions ---------------------------------------------------------
     def run_action(self, spec: ActionSpec, log_fn: LogFn) -> ActionResult:

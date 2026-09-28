@@ -195,9 +195,13 @@ def clear_queue(device_id: str, s: Session = Depends(get_session)):
     lock = manager.op_lock(device_id)
     if not lock.acquire(timeout=2):
         raise HTTPException(409, "phone is busy (posting or preparing)")
+    runner.busy.add(device_id)
     try:
         return {"cleared": queue_mod.clear(manager, device_id)}
+    except Exception as e:
+        raise HTTPException(500, str(e))
     finally:
+        runner.busy.discard(device_id)
         lock.release()
 
 

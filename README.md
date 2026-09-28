@@ -144,5 +144,7 @@ sticker are both mapped.
 **Wake and lock.** Farm phones without a passcode wake with home + swipe. A phone with a
 passcode (set it on the phone page; stored only locally) is woken through a standby runner
 session kept open from before the lock, since WebDriverAgent can't open a session on a
-locked phone; the keypad is read off a screenshot and the digits tapped. The runner cannot
-lock a Face ID phone on iOS 26, so keep Auto-Lock on Never there.
+locked phone; the keypad is read off a screenshot and the digits tapped. Sleep = lock the
+screen; on a Face ID phone (iOS 26) WebDriverAgent's lock command does nothing, so the
+runner presses the side button through a HID event instead. The Sleep and Wake buttons on
+the phone page run exactly the steps the runner takes after the last job and before the first.

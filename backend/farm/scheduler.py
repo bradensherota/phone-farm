@@ -137,6 +137,9 @@ class Runner:
         if not lock.acquire(timeout=1):
             return
         try:
+            drv = self.manager.driver(device_id)
+            if drv is not None and hasattr(drv, "wake"):
+                drv.wake()  # first thing in the morning: wake and unlock, whatever else is queued
             res = queue_mod.prepare(self.manager, device_id)
             log.info("%s: queue prepare: %s", device_id, res.get("message"))
         except Exception:
@@ -208,6 +211,8 @@ class Runner:
     def _execute_locked(self, device_id: str, job_id: int) -> None:
         drv = self.manager.driver(device_id)
         self.current[device_id] = job_id
+        if drv is not None and hasattr(drv, "wake") and drv.is_connected():
+            drv.wake()  # wake and unlock before anything touches the screen
         self._ensure_queued(device_id, job_id)
 
         def jlog(level: str, message: str) -> None:

@@ -303,7 +303,7 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
             break
         if tt_dismiss_prompt(bp, words):
             continue
-        if bp.find(r"^(CAMERA|CREATE|Add sound|Next|Post|Add description)", words):
+        if bp.find(r"^(CAMERA|CREATE|Add sound|Next|Post|Add description|Select multiple|Add to Story|Recents)", words):
             bp.log("info", "Closing a leftover TikTok screen")
             bp.tap(35, 90, "close (X)", pause=2.0)
             continue
@@ -311,20 +311,23 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
     bp.wait_for(r"^(Home|Inbox|Friends|Profile)$", timeout=20, region=(0, H - 90, W, H), what="TikTok tab bar")
     bp.tap(W / 2, H - 60, "Create (+)", pause=3.0)
     # the upload entry is the camera-roll thumbnail at the bottom-left, on the CAMERA/CREATE row
-    row = bp.wait_for(r"^CAMERA$", timeout=20, what="camera screen")
+    # bottom mode row reads "CAMERA / CREATE" on some builds, "POST / CREATE / LIVE" on others
+    row = bp.wait_for(r"^(CAMERA|POST|CREATE)$", timeout=20, region=(0, H * 0.85, W, H), what="camera screen")
     bp.tap(32, row.cy, "Upload (camera roll thumbnail)", pause=3.0)
     # gallery: album dropdown ("Recents ⌄" or the current album name) sits top-middle
-    bp.wait_for(r"^Next$", timeout=20, what="gallery")
+    bp.wait_for(r"^(Next|Select multiple)$", timeout=20, what="gallery")
     tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 120))
     words = bp.read()
     cx, cy = _lattice_pick(bp, words, int(extra["album_from_end"]), int(extra.get("album_count") or 0),
                            float(extra.get("duration_s") or 0) or None, spec.media_kind or "video")
     bp.tap(cx, cy, "planned item", pause=1.5)
     bp.tap_text(r"^Next$", timeout=10, region=(W / 2, H / 2, W, H), what="Next (to editor)", pause=3.0)
-    # editor: TikTok may auto-add a sound after a few seconds when it hears no speech
-    bp.wait_for(r"^Next$", timeout=40, region=(W / 2, 0, W, H), what="editor")
-    time.sleep(5)
-    bp.tap_text(r"^Next$", timeout=10, region=(W / 2, 0, W, H), what="Next (to caption)", pause=3.0)
+    # Some builds show an editor first (TikTok may auto-add a sound after a few seconds when it
+    # hears no speech); others go straight to the post screen.
+    w = bp.wait_for(r"^Next$|^Add description|Post$", timeout=40, what="editor or post screen")
+    if w.text.strip() == "Next":
+        time.sleep(5)
+        bp.tap_text(r"^Next$", timeout=10, region=(W / 2, 0, W, H), what="Next (to caption)", pause=3.0)
     bp.wait_for(r"Post$", timeout=20, region=(0, H * 0.8, W, H), what="Post screen")
     if spec.caption:
         field = bp.find(r"Add description|Add caption|Describe", bp._words)
@@ -340,6 +343,9 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
     post = bp.find(r"^Post$", words, region=(W * 0.7, 0, W, 120)) or bp.find(r"Post$", words, region=(0, H * 0.8, W, H))
     if post is None:
         raise FlowError("Post button not found")
+    if extra.get("dry_run"):
+        bp.log("info", f"DRY RUN: would tap Post at ({post.cx:.0f},{post.cy:.0f}); stopping here")
+        return True, "Dry run reached the Post screen"
     bp.tap_word(post, "Post", pause=4.0)
     for _ in range(5):
         words = bp.read()

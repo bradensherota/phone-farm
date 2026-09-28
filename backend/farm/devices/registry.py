@@ -145,9 +145,12 @@ class DeviceManager:
     # ---- watchdog --------------------------------------------------------
     def start_watchdog(self, interval_s: float = 30.0) -> None:
         """Real phones: if a runner that was up stops answering, start it again."""
+        retry_every_s = 180.0
+
         def loop():
             was_up: dict[str, bool] = {}
             misses: dict[str, int] = {}
+            next_retry: dict[str, float] = {}
             while True:
                 time.sleep(interval_s)
                 for did, drv in list(self._drivers.items()):
@@ -160,6 +163,7 @@ class DeviceManager:
                     if up:
                         misses[did] = 0
                         was_up[did] = True
+                        next_retry.pop(did, None)
                         continue
                     if was_up.get(did):
                         misses[did] = misses.get(did, 0) + 1
@@ -167,7 +171,14 @@ class DeviceManager:
                             log.warning("%s: runner stopped answering; restarting", drv.name)
                             was_up[did] = False
                             misses[did] = 0
+                            next_retry[did] = time.time() + retry_every_s
                             self.connect_async(did)
+                    elif did in next_retry and time.time() >= next_retry[did]:
+                        # A restart can't succeed while the phone is locked; keep trying every few
+                        # minutes so it comes back on its own once the phone is unlocked.
+                        log.info("%s: runner still down; trying to start it again", drv.name)
+                        next_retry[did] = time.time() + retry_every_s
+                        self.connect_async(did)
         threading.Thread(target=loop, name="device-watchdog", daemon=True).start()
 
     def remove(self, device_id: str) -> None:

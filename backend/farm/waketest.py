@@ -113,14 +113,19 @@ def run_step(manager: DeviceManager, device_id: str) -> None:
             _save(device_id, state)
             return
         try:
-            was_locked = drv.is_locked()
+            was_locked = drv.is_locked(default=None)
             had_standby = bool(getattr(drv, "_standby_sid", None))
             t0 = time.time()
+            if was_locked is None:
+                _event(state, step, "wake", False, f"After {minutes} min locked: the phone's runner is not answering (it died while the phone was locked)")
+                _advance(device_id, state)
+                return
             try:
                 drv.wake()
-                awake = not drv.is_locked()
+                now_locked = drv.is_locked(default=None)
+                awake = now_locked is False
                 _event(state, step, "wake", awake,
-                       f"After {minutes} min locked: {'woke and unlocked' if awake else 'still locked after wake attempt'}"
+                       f"After {minutes} min locked: {'woke and unlocked' if awake else 'runner stopped answering during wake' if now_locked is None else 'still locked after wake attempt'}"
                        f" ({time.time() - t0:.0f}s; was {'locked' if was_locked else 'already awake'}; standby session {'present' if had_standby else 'missing'})")
             except Exception as e:
                 _event(state, step, "wake", False, f"Wake raised: {e}")

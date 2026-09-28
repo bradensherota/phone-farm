@@ -18,7 +18,7 @@ export default function DevicePage() {
       <DeviceHeader device={device} onChanged={reload} />
       <div className="device-layout">
         <div>
-          <PhoneScreen deviceId={device.id} connected={device.connected} intervalMs={1200} />
+          <PhoneScreen deviceId={device.id} connected={device.connected} intervalMs={2500} />
           <div className="small dim" style={{ marginTop: 10, textAlign: "center" }}>
             {device.busy ? "Posting now" : device.connected ? "Idle" : "Not connected"}
           </div>

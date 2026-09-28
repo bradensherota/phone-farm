@@ -71,15 +71,14 @@ export function MediaThumb({ media, className }: { media: Media | null | undefin
 export function PhoneScreen({ deviceId, connected, intervalMs = 1500 }: { deviceId: string; connected: boolean; intervalMs?: number }) {
   const [src, setSrc] = useState(() => screenUrl(deviceId));
   const [failed, setFailed] = useState(false);
-  useInterval(() => { if (connected) setSrc(screenUrl(deviceId)); }, connected ? intervalMs : null);
+  // only poll while this window is actually visible; a hidden page hammering the phone's runner is wasted
+  useInterval(() => { if (connected && document.visibilityState === "visible") setSrc(screenUrl(deviceId)); }, connected ? intervalMs : null);
   useEffect(() => { setFailed(false); setSrc(screenUrl(deviceId)); }, [deviceId, connected]);
   return (
     <div className="phone-frame">
-      {connected && !failed ? (
-        <img src={src} alt="screen" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
-      ) : (
-        <div className="offline">{connected ? "no screen" : "offline"}</div>
-      )}
+      {/* the img stays mounted even after a failure so polling keeps going and the screen returns when the phone unlocks */}
+      {connected && <img src={src} alt="screen" style={failed ? { display: "none" } : undefined} onError={() => setFailed(true)} onLoad={(e) => setFailed((e.currentTarget as HTMLImageElement).naturalWidth === 0)} />}
+      {(!connected || failed) && <div className="offline">{connected ? "screen locked" : "offline"}</div>}
     </div>
   );
 }

@@ -172,11 +172,21 @@ class IOSDriver(Driver):
         d = self._get("/screenshot", timeout=20)
         return base64.b64decode(d["value"])
 
-    def is_locked(self) -> bool:
+    def is_locked(self, default=False):
+        """True/False from the phone; `default` when the runner doesn't answer."""
         try:
-            return bool(self._get("/wda/locked", timeout=5).get("value"))
+            v = bool(self._get("/wda/locked", timeout=5).get("value"))
+            self._locked_cache = (time.time(), v)
+            return v
         except Exception:
-            return False
+            return default
+
+    def locked_recently(self, max_age_s: float = 8.0) -> bool | None:
+        """Last known lock state without asking the phone again within `max_age_s`."""
+        t, v = getattr(self, "_locked_cache", (0.0, None))
+        if time.time() - t <= max_age_s and v is not None:
+            return v
+        return self.is_locked(default=None)
 
     # ---- wake / sleep ----------------------------------------------------
     # WebDriverAgent refuses to open a session while the screen is locked, so we keep a

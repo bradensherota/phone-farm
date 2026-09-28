@@ -246,8 +246,12 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
 @router.get("/{device_id}/screen.png")
 def screen(device_id: str):
     drv = manager.driver(device_id)
-    if drv is None or not drv.is_connected():
+    if drv is None:
         raise HTTPException(404, "device offline")
+    # A locked phone has nothing to show; asking its runner for screenshots every second
+    # while locked leaks connections on the phone until the runner dies. Don't ask.
+    if hasattr(drv, "locked_recently") and drv.locked_recently() is True:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
     try:
         png = drv.screenshot()
     except Exception as e:

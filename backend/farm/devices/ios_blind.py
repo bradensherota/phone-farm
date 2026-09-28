@@ -341,6 +341,7 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
             continue
         time.sleep(1.5)
     bp.wait_for(r"^(Home|Inbox|Friends|Profile)$", timeout=20, region=(0, H - 90, W, H), what="TikTok tab bar")
+    tt_ensure_account(bp, spec.handle)
     bp.tap(W / 2, H - 60, "Create (+)", pause=3.0)
     # the upload entry is the camera-roll thumbnail at the bottom-left, on the CAMERA/CREATE row
     # bottom mode row reads "CAMERA / CREATE" on some builds, "POST / CREATE / LIVE" on others
@@ -396,6 +397,41 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec) -> tuple[bool, str]:
     return True, "TikTok post shared"
 
 
+def tt_current_handle(bp: BlindPhone):
+    """(handle word, display-name word) from TikTok's profile header, or (None, None)."""
+    W, H = bp.pt_w, bp.pt_h
+    words = bp.read()
+    handle = bp.find(r"^@", words, region=(0, 0, W * 0.7, H * 0.3))
+    if not handle:
+        return None, None
+    name = min((w for w in words if 0 < handle.y - w.y < 60 and w.cx < W * 0.7), key=lambda w: handle.y - w.y, default=None)
+    return handle, name
+
+
+def tt_ensure_account(bp: BlindPhone, handle: str) -> None:
+    """On the Profile tab: switch to `handle` through the display-name sheet if needed."""
+    W, H = bp.pt_w, bp.pt_h
+    prof = bp.wait_for(r"^Profile$", timeout=15, region=(0, H - 90, W, H), what="Profile tab")
+    bp.tap_word(prof, "Profile tab", pause=3.0)
+    cur, name = tt_current_handle(bp)
+    if cur is None:
+        raise FlowError("TikTok profile header not readable")
+    if cur.text.lstrip("@").lower() == handle.lower():
+        bp.log("info", f"Already on @{handle}")
+        return
+    if name is None:
+        raise FlowError("TikTok display name (account switcher) not found")
+    bp.log("info", f"On {cur.text}; switching to @{handle}")
+    bp.tap_word(name, "account switcher", pause=2.5)
+    row = bp.find(rf"^{re.escape(handle)}$", bp.read(), region=(0, H * 0.4, W, H))
+    if row is None:
+        raise FlowError(f"@{handle} is not one of the TikTok accounts on this phone")
+    bp.tap_word(row, f"@{handle}", pause=4.0)
+    cur, _ = tt_current_handle(bp)
+    if cur is None or cur.text.lstrip("@").lower() != handle.lower():
+        raise FlowError(f"TikTok account switch failed (on {cur.text if cur else '?'})")
+
+
 def tt_open_story_gallery(bp: BlindPhone) -> None:
     """Get TikTok to the 'Add to Story' gallery: Profile tab, then the blue + on the avatar."""
     W, H = bp.pt_w, bp.pt_h
@@ -409,8 +445,7 @@ def tt_open_story_gallery(bp: BlindPhone) -> None:
         if tt_dismiss_prompt(bp, words):
             continue
         bp.tap(35, 90, "close (X)", pause=2.0)
-    prof = bp.wait_for(r"^Profile$", timeout=15, region=(0, H - 90, W, H), what="Profile tab")
-    bp.tap_word(prof, "Profile tab", pause=3.0)
+    tt_ensure_account(bp, bp.handle)
     # the avatar sits top-right of the profile header with a blue + at its bottom-right corner,
     # level with the Following / Followers / Likes row
     row = bp.wait_for(r"^(Followers|Following|Likes)$", timeout=15, what="profile header")
@@ -433,6 +468,7 @@ def tt_open_story_gallery(bp: BlindPhone) -> None:
 def run_blind(driver, spec: ActionSpec, log: LogFn):
     from .base import ActionResult
     bp = BlindPhone(driver.base, log)
+    bp.handle = spec.handle
     try:
         if spec.action == "tt_story":
             from .ios_blind_story import tt_story_blind

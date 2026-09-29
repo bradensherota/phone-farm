@@ -723,33 +723,33 @@ def ig_open_story_gallery(p: Phone) -> None:
 def ig_turn_on_trial(p: Phone) -> None:
     """On the reel share screen: scroll down to Instagram's "Trial" row and switch it on.
     Not every account has the row; that's a give-up, not a retry."""
-    sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+    # Instagram names the control "trial-switch" (value "0"/"1"); it sits lower on the share sheet
+    def find():
+        return p.el(name="trial-switch").wait(timeout=2, raise_error=False)
+
+    sw = find()
+    for _ in range(3):
+        if sw:
+            break
+        p.flick("up", strength=0.5)
+        sw = find()
     if not sw:
-        # the row is below the fold; ask the screen to scroll it into view, then look again
-        row = p.el(predicate="label BEGINSWITH 'Trial'").wait(timeout=3, raise_error=False)
-        if row:
-            try:
-                row.scroll("visible")
-            except Exception:
-                p.flick("up", strength=0.6)
-        else:
-            for _ in range(3):
-                p.flick("up", strength=0.6)
-                if p.exists(predicate="label BEGINSWITH 'Trial'", timeout=1):
-                    break
-        sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
-        if not sw:
-            row = p.el(predicate="label BEGINSWITH 'Trial'").wait(timeout=2, raise_error=False)
-            if not row:
-                raise FlowGiveUp("Trial isn't available on this account")
-            sw = row
+        raise FlowGiveUp("Trial isn't available on this account")
+    r, H = sw.bounds, p.window_height()
+    if r.y < 100 or r.y + r.height > H - 120:
+        try:
+            sw.scroll("visible")
+        except Exception:
+            pass
+        time.sleep(0.6)
+        sw = find() or sw
     if str(sw.value) in ("1", "true", "True"):
         p.log("info", "Trial is already on")
         return
     p.log("info", "Turn on Trial")
     sw.tap()
     time.sleep(1.2)
-    sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+    sw = find()
     if not sw or str(sw.value) not in ("1", "true", "True"):
         raise FlowGiveUp("The Trial switch would not turn on")
 
@@ -797,8 +797,8 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
         if not p.exists(name="share-sheet-share-button", timeout=3):
             raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
         if trial:
-            sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
-            if sw and str(sw.value) not in ("1", "true", "True"):
+            sw = p.el(name="trial-switch").wait(timeout=3, raise_error=False)
+            if not sw or str(sw.value) not in ("1", "true", "True"):
                 raise FlowGiveUp("Trial is off on the share screen; not posting it as a normal reel")
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share'")

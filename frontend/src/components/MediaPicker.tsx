@@ -98,7 +98,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
 
   const sync = () => {
     setSyncing(true);
-    api.syncDevice(deviceId).then(setItems).catch((e) => toast(e.message, "err")).finally(() => setSyncing(false));
+    api.syncDevice(deviceId, true).then(setItems).catch((e) => toast(e.message, "err")).finally(() => setSyncing(false));
   };
 
   return (
@@ -119,7 +119,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
             </select>
           )}
           {kind === "video" && <span className="pill">videos only</span>}
-          <button className="btn sm" onClick={sync} disabled={syncing}>{syncing ? "Syncing…" : "Sync"}</button>
+          <button className="btn sm" onClick={sync} disabled={syncing} title="Re-read the phone's albums (fast; no thumbnails)">{syncing ? "Syncing…" : "Sync albums"}</button>
           <button className="btn sm ghost" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">

@@ -395,20 +395,19 @@ class Runner:
             dev = s.get(Device, device_id)
             if job is None or dev is None or job.media is None or dev.kind == "sim":
                 return
-            titles = [t for t in (job.media.albums or "").split("|") if t]
-            wanted = [a.strip() for a in (dev.queue_album, dev.story_album) if a and a.strip()]
-            if any(a in titles for a in wanted):
-                return
+            fname = job.media.filename.split("/")[-1]
+            album = (dev.queue_album or "").strip() or "the album"
         drv = self.manager.driver(device_id)
         if drv is None or not drv.is_connected():
             return
-        jl_msg = f"Checking the phone's albums for {job.media.filename.split('/')[-1]}"
         with session_scope() as s:
-            s.add(JobLog(job_id=job_id, level="info", message=jl_msg))
+            s.add(JobLog(job_id=job_id, level="info", message=f"Refreshing the phone's '{album}' list so {fname}'s position is exact"))
         try:
-            self.manager.sync_media(device_id)
+            self.manager.sync_media(device_id, albums_only=True)
         except Exception as e:
             log.warning("album refresh failed: %s", e)
+            with session_scope() as s:
+                s.add(JobLog(job_id=job_id, level="warn", message=f"Could not refresh the album list ({e}); using the last known positions"))
 
     def _ensure_queued(self, device_id: str, job_id: int) -> None:
         """Safety net: if this job's media isn't in the queue album yet, add it now."""

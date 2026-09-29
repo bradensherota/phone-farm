@@ -162,7 +162,7 @@ export const api = {
   device: (id: string) => req<Device>(`/devices/${id}`),
   patchDevice: (id: string, body: Partial<Device> & { passcode?: string }) =>
     req<Device>(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  syncDevice: (id: string) => req<Media[]>(`/devices/${id}/sync`, { method: "POST" }),
+  syncDevice: (id: string, albumsOnly = false) => req<Media[]>(`/devices/${id}/sync${albumsOnly ? "?albums_only=true" : ""}`, { method: "POST" }),
   discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),
   connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),

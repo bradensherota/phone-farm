@@ -300,7 +300,25 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
     cx = col * cell_w + cell_w / 2
     here = overlay_in(row, col)
     if here and kind == "video" and want_secs and not _close(_secs(here.text), want_secs):
-        raise FlowError(f"Cell {target + 1} is {here.text}, expected ~{int(want_secs)}s; re-sync the album and re-plan")
+        # the album changed since the app last read it (an item added or removed): look at the
+        # neighbouring cells for the one with the planned length, nearest first
+        fixed = None
+        for delta in (1, -1, 2, -2, 3, -3):
+            t = target + delta
+            if t < lead_tiles or t > last_index + 3:
+                continue
+            o = overlay_in(t // cols, t % cols)
+            if o is not None and _close(_secs(o.text), want_secs):
+                fixed = t
+                break
+        if fixed is None:
+            raise FlowError(f"Cell {target + 1} is {here.text}, expected ~{int(want_secs)}s, and no neighbour matches; re-sync the album and re-plan")
+        bp.log("warn", f"Cell {target + 1} is {here.text}; using cell {fixed + 1} ({int(want_secs)}s) instead. Album changed since the last sync.")
+        target = fixed
+        row, col = target // cols, target % cols
+        cy = top + row * pitch + pitch / 2
+        cx = col * cell_w + cell_w / 2
+        here = overlay_in(row, col)
     if here and kind == "photo":
         raise FlowError(f"Cell {target + 1} is a video ({here.text}) but a photo was planned")
     if not here and kind == "video":

@@ -211,8 +211,10 @@ class DeviceManager:
         return info
 
     # ---- camera roll mirror ---------------------------------------------
-    def sync_media(self, device_id: str) -> int:
-        """Pull the phone's roll listing and mirror it into the DB, generating thumbs for new files."""
+    def sync_media(self, device_id: str, albums_only: bool = False) -> int:
+        """Pull the phone's roll listing and mirror it into the DB, generating thumbs for new files.
+        `albums_only`: just refresh the listing (album membership, order, lengths) and skip the
+        slow thumbnail pulls; used before every job so the queue album is known exactly."""
         drv = self._drivers.get(device_id)
         if drv is None or not drv.is_connected():
             return 0
@@ -255,6 +257,8 @@ class DeviceManager:
                 if fname not in seen and row.present:
                     row.present = False
 
+        if albums_only:
+            return len(items)
         # Pass 2: pull files for thumbnails + capture metadata, newest first, a bounded number per
         # sync. Each row is written in its own short transaction so the UI and runner never wait.
         pulls = 0

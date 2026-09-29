@@ -243,10 +243,10 @@ def patch_device(device_id: str, body: DevicePatch, s: Session = Depends(get_ses
 
 
 @router.post("/{device_id}/sync", response_model=list[MediaOut])
-def sync_device(device_id: str, s: Session = Depends(get_session)):
+def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(get_session)):
     if s.get(Device, device_id) is None:
         raise HTTPException(404, "device not found")
-    manager.sync_media(device_id)
+    manager.sync_media(device_id, albums_only=albums_only)
     return list_media(device_id, s)
 
 

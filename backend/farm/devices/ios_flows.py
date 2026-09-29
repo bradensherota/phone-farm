@@ -522,31 +522,41 @@ def _tap_gallery_cell(p: Phone, target, refind) -> None:
         r = e.bounds
         return r, int(r.x + r.width / 2), int(r.y + r.height / 2)
 
-    r, x, y = centre(target)
-    if r.y < 90 or r.y + r.height > H - 130:
-        p.log("info", "Scroll the item fully into view")
-        try:
-            target.scroll("visible")
-        except Exception:
-            p.flick("up", strength=0.3)
-        time.sleep(0.8)
-        target = refind() or target
-        r, x, y = centre(target)
-        if r.y + r.height > H - 130:
-            p.flick("up", strength=0.3)
+    TOP, BOTTOM = 140, H - 130  # the gallery header and Instagram's mode bar cover these bands
+
+    def settle(target, force: str | None = None):
+        """Nudge the grid so the cell sits clear of the header (scroll down a little) or the
+        mode bar (scroll up a little). `force` nudges even when the position looks fine."""
+        for _ in range(4):
+            r, x, y = centre(target)
+            if force == "down" or r.y < TOP:
+                p.log("info", "Item is under the top edge; scrolling back up a little")
+                p.flick("down", strength=0.25)
+            elif force == "up" or r.y + r.height > BOTTOM:
+                p.log("info", "Item is under the bottom bar; scrolling down a little")
+                p.flick("up", strength=0.25)
+            else:
+                return target, x, y
+            force = None
             time.sleep(0.8)
             target = refind() or target
-            r, x, y = centre(target)
+        r, x, y = centre(target)
+        return target, x, y
+
+    target, x, y = settle(target)
     for attempt in range(3):
-        p.log("info", f"Tap item at ({x},{y})" if attempt == 0 else f"Item didn't open; tapping again ({attempt + 1}/3)")
+        p.log("info", f"Tap item at ({x},{y})" if attempt == 0 else f"Tapping again ({attempt + 1}/3) at ({x},{y})")
         p.s.tap(x, y)
         time.sleep(2.5)
         opened = (p.exists(name="sundial-right-chevron-next-button", timeout=2) or p.exists(name="story-trimmer-done-button", timeout=0.5)
                   or p.exists(name="share-to-your-story", timeout=0.5) or not p.exists(name="gallery-header-title", timeout=1))
         if opened:
             return
+        # the tap did nothing: the cell is probably under the header or the bar, so move it
+        # towards the middle before trying again instead of tapping the same spot
         target = refind() or target
-        r, x, y = centre(target)
+        r, _, _ = centre(target)
+        target, x, y = settle(target, force="down" if r.y + r.height / 2 < H / 2 else "up")
     raise FlowError("Tapped the planned item but Instagram stayed on the gallery")
 
 

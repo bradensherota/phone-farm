@@ -33,7 +33,7 @@ def _parse_hhmm(v: str) -> dtime:
         h, m = v.split(":")
         return dtime(int(h), int(m))
     except Exception:
-        return dtime(7, 0)
+        return dtime(10, 0)
 
 
 def day_start(s: Session, device: Device, day: date) -> datetime:

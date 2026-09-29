@@ -69,7 +69,7 @@ class Device(Base):
     name: Mapped[str] = mapped_column(String)
     model: Mapped[str] = mapped_column(String, default="")
     kind: Mapped[str] = mapped_column(String, default="sim")  # "sim" | "ios"
-    routine_start: Mapped[str] = mapped_column(String, default="07:00")  # HH:MM local
+    routine_start: Mapped[str] = mapped_column(String, default="10:00")  # HH:MM local
     gap_min_s: Mapped[int] = mapped_column(Integer, default=90)
     gap_max_s: Mapped[int] = mapped_column(Integer, default=300)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)

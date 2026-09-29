@@ -201,5 +201,6 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sim_failure_rate": "0.0",  # 0..1, inject failures to test retry/alerts
     "max_attempts": "2",
     "dry_run": "false",  # true = flows stop right before the final Post/Share button
+    "sleep_after_queue": "false",  # true = lock the phone when its day's queue is done (the runner has died twice while locked; keep off until that's solved)
     "queue_auto": "false",  # true = the app fills/empties the queue album itself; false = you manage the album on the phone
 }

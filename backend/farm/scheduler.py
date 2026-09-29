@@ -168,7 +168,7 @@ class Runner:
         finally:
             lock.release()
             drv = self.manager.driver(device_id)
-            if drv is not None and hasattr(drv, "sleep") and device_id not in self.busy:
+            if drv is not None and hasattr(drv, "sleep") and device_id not in self.busy and settings_mod.as_bool(settings_mod.get("sleep_after_queue", "false")):
                 drv.sleep()
 
     def _spawn_worker(self, device_id: str) -> None:
@@ -245,9 +245,9 @@ class Runner:
             self.current.pop(device_id, None)
             self._workers.pop(device_id, None)
             self.force.discard(device_id)
-            # queue done: let the phone go back to sleep until the next routine
+            # queue done: let the phone go back to sleep until the next routine (if wanted)
             drv = self.manager.driver(device_id)
-            if drv is not None and hasattr(drv, "sleep"):
+            if drv is not None and hasattr(drv, "sleep") and settings_mod.as_bool(settings_mod.get("sleep_after_queue", "false")):
                 try:
                     await asyncio.to_thread(drv.sleep)
                 except Exception:

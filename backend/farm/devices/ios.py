@@ -331,6 +331,15 @@ class IOSDriver(Driver):
             time.sleep(0.3)
         time.sleep(2.5)
 
+    def go_home(self) -> None:
+        """Press Home so the phone rests on the home screen, not inside an app's feed."""
+        try:
+            sid = self._sid()
+            if sid:
+                self._post(f"/session/{sid}/wda/pressButton", {"name": "home"}, timeout=10)
+        except Exception as e:
+            log.warning("%s: home press failed: %s", self.name, e)
+
     def sleep(self) -> str:
         """Lock the screen so the phone can rest between routines (the "sleep" step at the end
         of every day's queue). A fresh standby session is opened first so the next wake can

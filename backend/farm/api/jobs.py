@@ -224,6 +224,22 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
     if j.status in (JobStatus.failed, JobStatus.cancelled, JobStatus.done):
         j.status = JobStatus.scheduled
     s.add(JobLog(job_id=j.id, level="info", message=f"Manual run: stage '{stage}' ({'only this stage' if mode == 'only' else 'and everything after'})"))
+    if mode == "from":
+        # "and everything after" means the rest of the day too: re-arm later jobs that failed
+        # or were stopped, so the queue carries on past this one
+        later = (
+            s.query(Job)
+            .filter(Job.device_id == j.device_id, Job.run_date == j.run_date, Job.sort_order > j.sort_order,
+                    Job.status.in_([JobStatus.failed, JobStatus.cancelled]))
+            .all()
+        )
+        for k in later:
+            k.status = JobStatus.scheduled
+            k.attempts = 0
+            k.last_error = ""
+            k.last_stage, k.failed_stage = "", ""
+            k.run_at = datetime.now()
+            s.add(JobLog(job_id=k.id, level="info", message=f"Re-armed by 'Continue from here' on job {j.id}"))
     s.commit()
     s.refresh(j)
     if not runner.run_manual(j.device_id, j.id, then_continue=(mode == "from")):

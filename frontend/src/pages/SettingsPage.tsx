@@ -25,11 +25,18 @@ export default function SettingsPage() {
     try { const s = await api.putSettings(values); setValues(s); setSaved(s); toast("Settings saved"); }
     catch (e: any) { toast(e.message, "err"); }
   };
+  // switches take effect the moment they're flipped; only the number fields wait for Save
+  const flip = async (key: string, label: string, on: boolean) => {
+    const v = on ? "true" : "false";
+    setValues((cur) => ({ ...cur, [key]: v }));
+    try { const s = await api.putSettings({ [key]: v }); setValues(s); setSaved(s); toast(`${label}: ${on ? "on" : "off"}`); }
+    catch (e: any) { toast(e.message, "err"); }
+  };
   return (
     <div className="page">
       <div className="page-head">
         <div><h1>Settings</h1><div className="sub">Local to this Mac. Stored in data/farm.db.</div></div>
-        <button className="btn primary" disabled={!dirty} onClick={save}>Save</button>
+        <button className="btn primary" disabled={!dirty} onClick={save} title="Switches save on their own; this saves the number fields">Save numbers</button>
       </div>
       <div className="settings-grid">
         {FIELDS.map((f) => (
@@ -38,7 +45,7 @@ export default function SettingsPage() {
               <div className="row" style={{ marginBottom: 6 }}>
                 <b className="grow">{f.label}</b>
                 {f.type === "bool" ? (
-                  <label className="switch"><input type="checkbox" checked={values[f.key] === "true"} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked ? "true" : "false" })} /></label>
+                  <label className="switch" title="Takes effect immediately"><input type="checkbox" checked={values[f.key] === "true"} onChange={(e) => flip(f.key, f.label, e.target.checked)} /></label>
                 ) : (
                   <input className="input" style={{ width: 110 }} type="number" step="any" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
                 )}
@@ -49,9 +56,9 @@ export default function SettingsPage() {
         ))}
         <div className="card">
           <div className="card-body">
-            <b>Real phones</b>
+            <b>How settings save</b>
             <div className="small dim" style={{ marginTop: 6 }}>
-              iPhone drivers are not wired in yet. When the new Mac with Xcode is set up, WebDriverAgent goes on each phone and the simulated phones here get replaced by the real ones. The planner, schedule, and activity log carry over unchanged.
+              Switches take effect the moment you flip them. Number fields are saved with the button at the top.
             </div>
           </div>
         </div>

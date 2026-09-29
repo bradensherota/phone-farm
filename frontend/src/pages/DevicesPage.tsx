@@ -44,6 +44,7 @@ export default function DevicesPage() {
         <div className="stats">
           <div className="stat"><span className="dim small">Today</span><b>{totals.done}/{totals.total}</b></div>
           <div className="stat"><span className="dim small">Failed</span><b style={{ color: totals.failed ? "var(--red)" : undefined }}>{totals.failed}</b></div>
+          {settings && (settings.dry_run === "true" ? <Pill kind="running" title="Flows stop before the final Post / Share">DRY RUN</Pill> : <Pill kind="failed" title="Flows post for real">LIVE</Pill>)}
           <button className="btn primary start-today" title="Run every connected phone's queue for today, in order. Plug the phones in and unlock them first." onClick={startToday}>▶ Start today</button>
           <button className="btn" onClick={async () => { await api.discoverDevices(); toast("Looking for phones over USB…"); reload(); }}>Find phones</button>
           <button className={`btn ${enabled ? "" : "primary"}`} onClick={toggleRunner}>{enabled ? "Pause runner" : "Resume runner"}</button>

@@ -34,6 +34,8 @@ export default function DayChecklist({ device }: { device: Device }) {
   const [detail, setDetail] = useState<Job | null>(null);
   const [busyLine, setBusyLine] = useState("");
   const { data: jobs, reload } = usePoll(() => api.jobs({ device_id: device.id, start: day, end: day }), 3000, [device.id, day]);
+  const { data: settings } = usePoll(api.settings, 5000);
+  const dryRun = settings?.dry_run === "true";
   const rows = (jobs || []).filter((j) => j.status !== "cancelled").sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
 
   const sys = async (line: string, fn: () => Promise<{ locked?: boolean; message?: string }>, okMsg: (r: any) => string) => {
@@ -42,7 +44,9 @@ export default function DayChecklist({ device }: { device: Device }) {
   };
   const runStage = async (job: Job, stage: Stage, mode: "only" | "from") => {
     const what = mode === "only" ? `only "${STAGE_LABEL[stage]}"` : `from "${STAGE_LABEL[stage]}" to the end`;
-    const warn = stage === "post" || mode === "from" ? " This can post for real (unless Dry run is on)." : "";
+    const warn = stage === "post" || mode === "from"
+      ? (dryRun ? " Dry run is ON: it stops before the final Post / Share." : " Dry run is OFF: this will post for real.")
+      : "";
     if (!(await ask(`${actionMeta(job.action).label} @${job.handle}: run ${what}?${warn}`, "Run"))) return;
     try { await api.runStage(job.id, stage, mode); toast("Running"); reload(); } catch (e: any) { toast(e.message, "err"); }
   };
@@ -60,6 +64,7 @@ export default function DayChecklist({ device }: { device: Device }) {
         <strong>Day checklist</strong>
         <input className="input" type="date" style={{ width: 150 }} value={day} onChange={(e) => setDay(e.target.value)} />
         <span className="small dim grow">Each line is a checkpoint. {device.paused ? "Phone is paused: lines only run when you press them." : "Phone is live: after a line finishes, the queue keeps going on its own."}</span>
+        {settings && (dryRun ? <Pill kind="running" title="Flows stop before the final Post / Share. Change it in Settings.">DRY RUN</Pill> : <Pill kind="failed" title="Flows post for real. Turn Dry run on in Settings to rehearse.">LIVE</Pill>)}
         {device.busy && <Pill kind="running">running</Pill>}
         {device.busy && <button className="btn sm stop" onClick={async () => { try { await api.stopDevice(device.id); toast("Stopping after the current step. Phone paused."); reload(); } catch (e: any) { toast(e.message, "err"); } }}>■ Stop</button>}
       </div>

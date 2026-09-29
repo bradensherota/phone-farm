@@ -166,6 +166,7 @@ export const api = {
   discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),
   connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
+  startToday: () => req<{ device_id: string; name: string; started: number; connected: boolean; note: string }[]>(`/devices/start-today`, { method: "POST" }),
   runDay: (id: string, run_date: string) => req<{ started: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
   wakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`),
   startWakeTest: (id: string, steps: number[]) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "POST", body: JSON.stringify({ steps }) }),

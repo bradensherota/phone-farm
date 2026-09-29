@@ -4,6 +4,8 @@ import { useToast } from "../components/common";
 
 const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" }[] = [
   { key: "runner_enabled", label: "Runner enabled", help: "Master switch. Off = nothing posts anywhere.", type: "bool" },
+  { key: "auto_start", label: "Start days automatically at their time", help: "Off: nothing runs until you press Start today on the Phones page (or Run day / Run now). On: each phone's queue starts by itself at the day's start time.", type: "bool" },
+  { key: "tiktok_stories", label: "TikTok stories", help: "Off: TikTok stories can't be planned and any planned ones are cancelled. Turn on again once link stickers work by hand on the phone.", type: "bool" },
   { key: "sleep_after_queue", label: "Lock the phone after its day is done", help: "Off: the phone stays unlocked after posting (Auto-Lock should be Never). On: the app locks the screen when the queue finishes. The runner has died twice after an hour or so locked, so leave this off until an overnight test passes.", type: "bool" },
   { key: "queue_auto", label: "App manages the queue album", help: "Off: you add each planned clip to the phone's queue album in Photos yourself and remove it after. On: the app fills the album before the day starts and empties it after posting (slower and less reliable).", type: "bool" },
   { key: "dry_run", label: "Dry run", help: "Every flow runs all the way to the final Post / Share button and stops there without posting. Turn off for real posting.", type: "bool" },

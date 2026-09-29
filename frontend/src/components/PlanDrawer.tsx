@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Account, ActionKey, ActionMeta, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, api, fmtDateTime, parseYmd, toLocalInput } from "../lib/api";
-import { MediaThumb, Pill, PlatformIcon, useToast } from "./common";
+import { MediaThumb, Pill, PlatformIcon, usePoll, useToast } from "./common";
 import MediaPicker from "./MediaPicker";
 import JobDetail from "./JobDetail";
 
@@ -42,7 +42,9 @@ function draftFrom(meta: ActionMeta, account: Account, job?: Job): Draft {
 }
 
 export default function PlanDrawer({ account, device, date, jobs, onClose, onSaved }: Props) {
-  const actions = useMemo(() => actionsFor(account.platform), [account.platform]);
+  const { data: settings } = usePoll(api.settings, 15000);
+  const ttStories = settings?.tiktok_stories === "true";
+  const actions = useMemo(() => actionsFor(account.platform).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [picker, setPicker] = useState<ActionKey | null>(null);
   const [detail, setDetail] = useState<Job | null>(null);

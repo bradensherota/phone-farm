@@ -70,6 +70,43 @@ def connect_device(device_id: str, s: Session = Depends(get_session)):
     return device_out(s, d)
 
 
+@router.post("/start-today")
+def start_today(s: Session = Depends(get_session)):
+    """The morning button: every connected phone runs its whole queue for today, in order.
+    Phones that are paused are resumed; phones that aren't connected are skipped."""
+    from datetime import datetime
+    today = date.today()
+    now = datetime.now()
+    out = []
+    for d in s.query(Device).filter(Device.kind != "sim").all():
+        jobs = (
+            s.query(Job)
+            .filter(Job.device_id == d.id, Job.run_date == today, Job.status.in_([JobStatus.scheduled, JobStatus.failed]))
+            .order_by(Job.sort_order, Job.id)
+            .all()
+        )
+        drv = manager.driver(d.id)
+        connected = drv is not None and drv.is_connected()
+        if not jobs:
+            out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": connected, "note": "nothing planned today"})
+            continue
+        if not connected:
+            out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": False, "note": "not connected; plug it in and unlock it, then press again"})
+            continue
+        d.paused = False
+        for j in jobs:
+            j.status = JobStatus.scheduled
+            j.attempts = 0
+            j.last_error = ""
+            j.last_stage, j.failed_stage = "", ""
+            j.run_at = now
+            s.add(JobLog(job_id=j.id, level="info", message="Started by 'Start today'"))
+        s.commit()
+        runner.kick(d.id)
+        out.append({"device_id": d.id, "name": d.name, "started": len(jobs), "connected": True, "note": ""})
+    return out
+
+
 @router.post("/{device_id}/run-day")
 def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
     """Start this phone's whole queue for `run_date` now: every job that hasn't posted yet

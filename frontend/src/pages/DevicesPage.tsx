@@ -15,6 +15,20 @@ export default function DevicesPage() {
     reloadSettings();
   };
 
+  const startToday = async () => {
+    try {
+      const r = await api.startToday();
+      const started = r.filter((x) => x.started > 0);
+      const skipped = r.filter((x) => x.started === 0 && x.note && !x.note.startsWith("nothing"));
+      const msg = [
+        started.length ? `Started ${started.map((x) => `${x.name} (${x.started})`).join(", ")}` : "Nothing to start",
+        skipped.length ? `Skipped ${skipped.map((x) => `${x.name}: ${x.note}`).join("; ")}` : "",
+      ].filter(Boolean).join(". ");
+      toast(msg, started.length ? "ok" : "err");
+      reload();
+    } catch (e: any) { toast(e.message, "err"); }
+  };
+
   const totals = (devices || []).reduce(
     (a, d) => ({ total: a.total + d.today.total, done: a.done + d.today.done, failed: a.failed + d.today.failed }),
     { total: 0, done: 0, failed: 0 },
@@ -30,6 +44,7 @@ export default function DevicesPage() {
         <div className="stats">
           <div className="stat"><span className="dim small">Today</span><b>{totals.done}/{totals.total}</b></div>
           <div className="stat"><span className="dim small">Failed</span><b style={{ color: totals.failed ? "var(--red)" : undefined }}>{totals.failed}</b></div>
+          <button className="btn primary start-today" title="Run every connected phone's queue for today, in order. Plug the phones in and unlock them first." onClick={startToday}>▶ Start today</button>
           <button className="btn" onClick={async () => { await api.discoverDevices(); toast("Looking for phones over USB…"); reload(); }}>Find phones</button>
           <button className={`btn ${enabled ? "" : "primary"}`} onClick={toggleRunner}>{enabled ? "Pause runner" : "Resume runner"}</button>
         </div>
@@ -49,7 +64,7 @@ export default function DevicesPage() {
                     <h3>{d.name}</h3>
                     {d.paused && <Pill kind="paused">paused</Pill>}
                   </div>
-                  <div className="small dim">{d.model} · {d.kind === "sim" ? "simulated" : "USB"} · routine {d.routine_start}</div>
+                  <div className="small dim">{d.model} · {d.kind === "sim" ? "simulated" : "USB"}{settings?.auto_start === "true" ? ` · starts ${d.routine_start}` : " · manual start"}</div>
                   {d.connecting && <div className="small" style={{ color: "var(--amber)" }}>Starting runner…</div>}
                   {d.error && !d.connecting && <div className="small" style={{ color: "var(--red)" }}>{d.error}</div>}
                   <div className="small dim">{d.media_count} items in camera roll</div>

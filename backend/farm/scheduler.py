@@ -45,18 +45,20 @@ def day_start(s: Session, device: Device, day: date) -> datetime:
 def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
     today = now.date()
     routine = day_start(s, device, today)
+    auto = settings_mod.as_bool(settings_mod.get("auto_start", "false"))
+    explicit = Job.run_at.isnot(None) & (Job.run_at <= now)
+    if auto:
+        # a job from an earlier day never fires on its own (see `_expire_missed`);
+        # "Run day" or "Run now" give it an explicit time if it should still go out
+        cond = or_(explicit, Job.run_at.is_(None) & (Job.run_date == today) & (routine <= now))
+    else:
+        # manual mode: only "Start today", "Run day", "Run now" and stage runs give a job a time
+        cond = explicit
     q = (
         s.query(Job)
         .options(selectinload(Job.account), selectinload(Job.media))
         .filter(Job.device_id == device.id, Job.status == JobStatus.scheduled)
-        .filter(
-            or_(
-                Job.run_at.isnot(None) & (Job.run_at <= now),
-                # a job from an earlier day never fires on its own (see `_expire_missed`);
-                # "Run day" or "Run now" give it an explicit time if it should still go out
-                Job.run_at.is_(None) & (Job.run_date == today) & (routine <= now),
-            )
-        )
+        .filter(cond)
         .order_by(Job.run_date, Job.sort_order, Job.id)
     )
     return q.all()
@@ -107,6 +109,16 @@ class Runner:
                 log.exception("runner tick failed")
             await asyncio.sleep(TICK_SECONDS)
 
+    def _cancel_disabled(self) -> None:
+        """TikTok stories are switched off: any that are still planned are cancelled."""
+        if settings_mod.as_bool(settings_mod.get("tiktok_stories", "false")):
+            return
+        from .models import Action
+        with session_scope() as s:
+            for j in s.query(Job).filter(Job.action == Action.tt_story, Job.status == JobStatus.scheduled).all():
+                j.status = JobStatus.cancelled
+                s.add(JobLog(job_id=j.id, level="info", message="Cancelled: TikTok stories are switched off in Settings"))
+
     def _expire_missed(self, now: datetime) -> None:
         """Planned jobs whose day has passed without running are marked failed ("missed"), so
         they show up in the planner instead of firing unexpectedly the next time the phone is
@@ -125,6 +137,7 @@ class Runner:
             return
         now = datetime.now()
         self._expire_missed(now)
+        self._cancel_disabled()
         with session_scope() as s:
             devices = s.query(Device).filter(Device.paused.is_(False)).all()
             wake = [d.id for d in devices if d.id not in self.busy and due_jobs(s, d, now)]

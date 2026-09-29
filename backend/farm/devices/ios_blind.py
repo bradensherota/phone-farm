@@ -321,33 +321,39 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
         here = overlay_in(row, col)
     if here and kind == "photo":
         raise FlowError(f"Cell {target + 1} is a video ({here.text}) but a photo was planned")
-    # below the fold: drag the grid up slowly (no fling) until the cell is mid-screen, then re-read
+    # below the fold: drag the grid up a little at a time, measuring how far it really moved
+    # from the tab row (short albums can't scroll far), until the tile is on screen
     H = bp.pt_h
+    tile_top = cy - pitch / 2
     for _ in range(6):
         if cy <= H - 70:
             break
-        d = min(cy - H * 0.45, H * 0.6)
-        bp.log("info", f"Cell {target + 1} is below the screen; scrolling the album up {d:.0f}pt")
-        bp.swipe(bp.pt_w / 2, H * 0.82, bp.pt_w / 2, H * 0.82 - d, duration=1.2)
+        want = min(cy - H * 0.5, H * 0.35)
+        bp.log("info", f"Cell {target + 1} is low on the screen; scrolling the album up {want:.0f}pt")
+        bp.swipe(bp.pt_w / 2, H * 0.82, bp.pt_w / 2, H * 0.82 - want, duration=1.2)
         time.sleep(1.5)
-        top -= d
-        cy -= d
         words = read_grid(bp)
         overlays = [w for w in words if DUR_RX.match(w.text.strip())]
+        tabs2 = bp.find(r"^(Favorites|Videos|Photos|All)$", words)
+        if tabs2 is not None:
+            moved = top - (tabs2.y + tabs2.h + 12)  # exact: the tab row scrolls with the grid
+        else:
+            moved = want
+        if moved < 4:
+            bp.log("info", "The album doesn't scroll further; tapping inside the visible part of the tile")
+            break
+        top -= moved
+        cy -= moved
+        tile_top = cy - pitch / 2
         here = overlay_in(row, col)
-        if here and kind == "video" and want_secs and not _close(_secs(here.text), want_secs):
-            # the drag didn't land exactly on a row boundary; trust the overlay in the nearest row
-            near = [(abs((w.cy) - cy), w) for w in overlays if abs(w.cx - (cx + cell_w / 2 - 22)) < cell_w / 2 and _close(_secs(w.text), want_secs)]
-            if near:
-                near.sort(key=lambda t: t[0])
-                w = near[0][1]
-                cy = w.y + w.h - pitch / 2 + 6
-                here = w
-                bp.log("info", f"Aligned to the {w.text} cell after scrolling")
+    if tile_top > H - 80:
+        raise FlowError("Planned item is out of view and the album can't scroll further; re-sync and re-plan")
+    if cy > H - 50:
+        cy = max(tile_top + 40, H - 50)  # tap the visible upper part of a tile cut off by the bottom edge
     if not here and kind == "video":
         bp.log("warn", "No duration overlay readable on the target cell; trusting the position")
-    if cy < 90 or cy > H - 60:
-        raise FlowError("Planned item is still out of view after scrolling; keep the queue album shorter")
+    if cy < 90:
+        raise FlowError("Planned item sits above the visible grid; re-sync and re-plan")
     bp.log("info", f"TikTok: cell {target + 1} ({'newest first' if newest_first else 'oldest first'} grid)" + (f" ({here.text})" if here else ""))
     return cx, cy
 

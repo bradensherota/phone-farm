@@ -81,8 +81,8 @@ export function PlatformIcon({ platform }: { platform: Platform }) {
   return <span className={`plat ${platform}`} title={platform}>{glyph}</span>;
 }
 
-export function Pill({ kind, children }: { kind?: string; children: React.ReactNode }) {
-  return <span className={`pill ${kind || ""}`}>{children}</span>;
+export function Pill({ kind, children, title }: { kind?: string; children: React.ReactNode; title?: string }) {
+  return <span className={`pill ${kind || ""}`} title={title}>{children}</span>;
 }
 
 export function StatusDot({ connected, busy }: { connected: boolean; busy?: boolean }) {

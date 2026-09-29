@@ -743,15 +743,27 @@ def ig_turn_on_trial(p: Phone) -> None:
             pass
         time.sleep(0.6)
         sw = find() or sw
-    if str(sw.value) in ("1", "true", "True"):
+    if ig_trial_is_on(p):
         p.log("info", "Trial is already on")
         return
     p.log("info", "Turn on Trial")
     sw.tap()
-    time.sleep(1.2)
-    sw = find()
-    if not sw or str(sw.value) not in ("1", "true", "True"):
-        raise FlowGiveUp("The Trial switch would not turn on")
+    for _ in range(4):
+        time.sleep(1.0)
+        if ig_trial_is_on(p):
+            p.log("info", "Trial is on")
+            return
+    raise FlowGiveUp("The Trial switch would not turn on")
+
+
+def ig_trial_is_on(p: Phone) -> bool:
+    """Instagram reports the state two ways: the control's value (0/1) and the row's label,
+    which starts with "Checked" or "Not checked". Either saying on counts."""
+    sw = p.el(name="trial-switch").wait(timeout=1.5, raise_error=False)
+    if sw and str(sw.value) in ("1", "true", "True"):
+        return True
+    row = p.el(predicate="type == 'XCUIElementTypeSwitch' AND label BEGINSWITH 'Checked, Trial'").wait(timeout=1, raise_error=False)
+    return bool(row)
 
 
 def ig_trial(p: Phone, spec: ActionSpec):
@@ -796,10 +808,8 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
     def post():
         if not p.exists(name="share-sheet-share-button", timeout=3):
             raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
-        if trial:
-            sw = p.el(name="trial-switch").wait(timeout=3, raise_error=False)
-            if not sw or str(sw.value) not in ("1", "true", "True"):
-                raise FlowGiveUp("Trial is off on the share screen; not posting it as a normal reel")
+        if trial and not ig_trial_is_on(p):
+            raise FlowGiveUp("Trial is off on the share screen; not posting it as a normal reel")
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share'")
             return True, "Dry run reached Share"

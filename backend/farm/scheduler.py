@@ -271,10 +271,11 @@ class Runner:
             stage_only = job.run_stage if manual == "only" else ""
             if manual == "from":
                 stage_from = job.run_stage
-            elif manual == "restart":
-                stage_from = ""
             else:
-                stage_from = _next_stage(job.last_stage)
+                # automatic runs and retries always start from 'open': after a failure the phone
+                # is rarely still on the screen the next stage expects, and 'open' is cheap and
+                # tidies up leftover screens. Checkpoints are for hand-driven "Continue from here".
+                stage_from = ""
             if manual == "restart" or (manual == "from" and job.run_stage == "open"):
                 job.last_stage = ""
             job.run_stage, job.run_mode = "", ""

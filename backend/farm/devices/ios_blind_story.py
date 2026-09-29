@@ -75,7 +75,8 @@ def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool
 
     def pick():
         if not bp.find(r"^Add to Story$", bp.read()):
-            raise FlowError("Not on the 'Add to Story' gallery (run the 'open' stage first)")
+            bp.log("info", "Not on the 'Add to Story' gallery; opening it again")
+            open_()
         tt_select_album_blind(bp, album, dropdown_region=(0, 0, W, 0.35 * H), list_x=W * 0.25)
         words = read_grid(bp)
         # story grid: a camera tile first, portrait tiles (~16:9 tall)

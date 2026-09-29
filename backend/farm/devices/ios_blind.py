@@ -440,7 +440,8 @@ def tt_post_blind(bp: BlindPhone, spec: ActionSpec):
         if not bp.find(r"^(Next|Select multiple)$", words):
             if not bp.find(r"^(CAMERA|POST|CREATE)$", words, region=(0, H * 0.85, W, H)):
                 if not bp.find(r"^(Home|Inbox|Friends|Profile)$", words, region=(0, H - 90, W, H)):
-                    raise FlowError("TikTok isn't on its tab bar (run the 'open' stage first)")
+                    bp.log("info", "TikTok isn't on its tab bar; opening it again")
+                    open_()
                 bp.tap(W / 2, H - 60, "Create (+)", pause=3.0)
             # the upload entry is the camera-roll thumbnail at the bottom-left, on the CAMERA/CREATE row
             row = bp.wait_for(r"^(CAMERA|POST|CREATE)$", timeout=20, region=(0, H * 0.85, W, H), what="camera screen")

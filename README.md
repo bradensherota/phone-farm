@@ -166,3 +166,9 @@ switch, each job with its stages, sleep. Every line has **Run** (only that line;
 already be where the previous line left it) and **Continue from here** (that line and everything
 after it). While the phone is **paused** only the line you press runs, which is how a day is
 stepped through by hand; resume the phone and the queue keeps going on its own.
+
+**Trial reel** (`ig_trial`): a reel with Instagram's "Trial" switch on (shown to non-followers
+only). Same flow as a reel; in the caption stage it scrolls the share screen to the Trial row,
+turns the switch on and checks it. Order within an account: Reel, Trial reel, Story. If the
+Trial row isn't there or the switch won't turn on, the job fails at once (no retry) and the
+queue moves on, so it is never posted as a normal reel by mistake.

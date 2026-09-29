@@ -26,6 +26,10 @@ BUNDLES = {
 }
 
 
+class FlowGiveUp(Exception):
+    """A failure a retry can't fix; the job is marked failed at once and the queue moves on."""
+
+
 class FlowError(Exception):
     pass
 
@@ -706,7 +710,45 @@ def ig_open_story_gallery(p: Phone) -> None:
     p.wait(name="gallery-header-title", what="story gallery", timeout=15)
 
 
-def ig_reel(p: Phone, spec: ActionSpec):
+def ig_turn_on_trial(p: Phone) -> None:
+    """On the reel share screen: scroll down to Instagram's "Trial" row and switch it on.
+    Not every account has the row; that's a give-up, not a retry."""
+    sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+    if not sw:
+        # the row is below the fold; ask the screen to scroll it into view, then look again
+        row = p.el(predicate="label BEGINSWITH 'Trial'").wait(timeout=3, raise_error=False)
+        if row:
+            try:
+                row.scroll("visible")
+            except Exception:
+                p.flick("up", strength=0.6)
+        else:
+            for _ in range(3):
+                p.flick("up", strength=0.6)
+                if p.exists(predicate="label BEGINSWITH 'Trial'", timeout=1):
+                    break
+        sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+        if not sw:
+            row = p.el(predicate="label BEGINSWITH 'Trial'").wait(timeout=2, raise_error=False)
+            if not row:
+                raise FlowGiveUp("Trial isn't available on this account")
+            sw = row
+    if str(sw.value) in ("1", "true", "True"):
+        p.log("info", "Trial is already on")
+        return
+    p.log("info", "Turn on Trial")
+    sw.tap()
+    time.sleep(1.2)
+    sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+    if not sw or str(sw.value) not in ("1", "true", "True"):
+        raise FlowGiveUp("The Trial switch would not turn on")
+
+
+def ig_trial(p: Phone, spec: ActionSpec):
+    return ig_reel(p, spec, trial=True)
+
+
+def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
     if spec.media_index is None:
         raise FlowError("No media chosen")
 
@@ -738,10 +780,16 @@ def ig_reel(p: Phone, spec: ActionSpec):
             # The caption opens a full-screen editor; its checkmark is the "OK" button.
             if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
                 p.dismiss_keyboard()
+        if trial:
+            ig_turn_on_trial(p)
 
     def post():
         if not p.exists(name="share-sheet-share-button", timeout=3):
             raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
+        if trial:
+            sw = p.el(predicate="label == 'Trial' AND type == 'XCUIElementTypeSwitch'").wait(timeout=3, raise_error=False)
+            if sw and str(sw.value) not in ("1", "true", "True"):
+                raise FlowGiveUp("Trial is off on the share screen; not posting it as a normal reel")
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share'")
             return True, "Dry run reached Share"
@@ -749,7 +797,7 @@ def ig_reel(p: Phone, spec: ActionSpec):
         # Instagram returns to the feed/profile while it uploads in the background
         for _ in range(30):
             if p.exists(name="mainfeed-tab", timeout=1) or p.exists(name="profile-tab", timeout=1):
-                return True, "Reel shared (uploading)"
+                return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
             time.sleep(1)
         raise FlowError("Did not return to the feed after Share")
 
@@ -852,6 +900,7 @@ def x_post(p: Phone, spec: ActionSpec):
 
 FLOWS = {
     "ig_reel": ig_reel,
+    "ig_trial": ig_trial,
     "ig_story": ig_story,
     "tt_post": tt_post,
     "tt_story": tt_story,
@@ -869,6 +918,7 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
     if fn is None:
         return ActionResult(False, f"No flow for {spec.action}")
     partial = False
+    retry = True
     try:
         extra = spec.extra or {}
         first = extra.get("stage_only") or extra.get("stage_from")
@@ -877,6 +927,8 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         r = fn(phone, spec)
         ok, message = r[0], r[1]
         partial = bool(r[2]) if len(r) > 2 else False
+    except FlowGiveUp as e:
+        ok, message, retry = False, str(e), False
     except FlowError as e:
         ok, message = False, str(e)
     except Exception:
@@ -889,4 +941,4 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         pass
     # stay in the app: the next job on this phone opens whatever it needs itself
     phone.close()  # release any held touch, detach from the app
-    return ActionResult(ok, message, shot, partial=partial)
+    return ActionResult(ok, message, shot, partial=partial, retry=retry)

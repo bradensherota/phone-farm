@@ -32,6 +32,7 @@ class Platform(str, enum.Enum):
 
 class Action(str, enum.Enum):
     ig_reel = "ig_reel"
+    ig_trial = "ig_trial"  # a reel with Instagram's "Trial" switch on: shown to non-followers only
     ig_story = "ig_story"
     tt_post = "tt_post"
     tt_story = "tt_story"
@@ -41,7 +42,8 @@ class Action(str, enum.Enum):
 # What each action needs. `media`: "video" | "any". `link`: whether the flow adds a link sticker.
 ACTIONS: dict[Action, dict] = {
     Action.ig_reel: {"platform": Platform.instagram, "label": "Reel", "media": "video", "link": False, "rank": 0},
-    Action.ig_story: {"platform": Platform.instagram, "label": "Story", "media": "any", "link": True, "rank": 1},
+    Action.ig_trial: {"platform": Platform.instagram, "label": "Trial reel", "media": "video", "link": False, "rank": 1},
+    Action.ig_story: {"platform": Platform.instagram, "label": "Story", "media": "any", "link": True, "rank": 2},
     Action.tt_post: {"platform": Platform.tiktok, "label": "Post", "media": "video", "link": False, "rank": 0},
     Action.tt_story: {"platform": Platform.tiktok, "label": "Story", "media": "any", "link": True, "rank": 1},
     Action.x_post: {"platform": Platform.x, "label": "Post", "media": "any", "link": False, "rank": 0},

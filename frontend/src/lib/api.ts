@@ -1,5 +1,5 @@
 export type Platform = "instagram" | "tiktok" | "x";
-export type ActionKey = "ig_reel" | "ig_story" | "tt_post" | "tt_story" | "x_post";
+export type ActionKey = "ig_reel" | "ig_trial" | "ig_story" | "tt_post" | "tt_story" | "x_post";
 export type JobStatus = "scheduled" | "running" | "done" | "failed" | "cancelled";
 
 export interface Account {
@@ -118,7 +118,8 @@ export interface ActionMeta {
 
 export const ACTIONS: ActionMeta[] = [
   { action: "ig_reel", platform: "instagram", label: "Reel", media: "video", link: false, rank: 0 },
-  { action: "ig_story", platform: "instagram", label: "Story", media: "any", link: true, rank: 1 },
+  { action: "ig_trial", platform: "instagram", label: "Trial reel", media: "video", link: false, rank: 1 },
+  { action: "ig_story", platform: "instagram", label: "Story", media: "any", link: true, rank: 2 },
   { action: "tt_post", platform: "tiktok", label: "Post", media: "video", link: false, rank: 0 },
   { action: "tt_story", platform: "tiktok", label: "Story", media: "any", link: true, rank: 1 },
   { action: "x_post", platform: "x", label: "Post", media: "any", link: false, rank: 0 },

@@ -44,6 +44,7 @@ class ActionResult:
     message: str = ""
     screenshot_png: bytes | None = None
     partial: bool = False  # a single stage ran; the job is not finished
+    retry: bool = True  # False: a retry can't help (e.g. the feature isn't on this account)
 
 
 LogFn = Callable[[str, str], None]  # (level, message)

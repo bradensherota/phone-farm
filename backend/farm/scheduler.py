@@ -402,7 +402,7 @@ class Runner:
             self._finish(job_id, ok=False, message=f"Driver error: {e}", shot=shot, attempt=attempt, stage=stage_now["name"], manual=bool(manual))
             return
         self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt,
-                     stage=stage_now["name"], partial=result.partial, manual=bool(manual))
+                     stage=stage_now["name"], partial=result.partial, manual=bool(manual) or not getattr(result, "retry", True))
         if result.ok and not result.partial and auto_album:
             self._release_after_post(device_id, job_id)
 

@@ -321,10 +321,33 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
         here = overlay_in(row, col)
     if here and kind == "photo":
         raise FlowError(f"Cell {target + 1} is a video ({here.text}) but a photo was planned")
+    # below the fold: drag the grid up slowly (no fling) until the cell is mid-screen, then re-read
+    H = bp.pt_h
+    for _ in range(6):
+        if cy <= H - 70:
+            break
+        d = min(cy - H * 0.45, H * 0.6)
+        bp.log("info", f"Cell {target + 1} is below the screen; scrolling the album up {d:.0f}pt")
+        bp.swipe(bp.pt_w / 2, H * 0.82, bp.pt_w / 2, H * 0.82 - d, duration=1.2)
+        time.sleep(1.5)
+        top -= d
+        cy -= d
+        words = read_grid(bp)
+        overlays = [w for w in words if DUR_RX.match(w.text.strip())]
+        here = overlay_in(row, col)
+        if here and kind == "video" and want_secs and not _close(_secs(here.text), want_secs):
+            # the drag didn't land exactly on a row boundary; trust the overlay in the nearest row
+            near = [(abs((w.cy) - cy), w) for w in overlays if abs(w.cx - (cx + cell_w / 2 - 22)) < cell_w / 2 and _close(_secs(w.text), want_secs)]
+            if near:
+                near.sort(key=lambda t: t[0])
+                w = near[0][1]
+                cy = w.y + w.h - pitch / 2 + 6
+                here = w
+                bp.log("info", f"Aligned to the {w.text} cell after scrolling")
     if not here and kind == "video":
         bp.log("warn", "No duration overlay readable on the target cell; trusting the position")
-    if cy < 90 or cy > bp.pt_h - 60:
-        raise FlowError("Planned item is scrolled out of view; keep the queue album short")
+    if cy < 90 or cy > H - 60:
+        raise FlowError("Planned item is still out of view after scrolling; keep the queue album shorter")
     bp.log("info", f"TikTok: cell {target + 1} ({'newest first' if newest_first else 'oldest first'} grid)" + (f" ({here.text})" if here else ""))
     return cx, cy
 

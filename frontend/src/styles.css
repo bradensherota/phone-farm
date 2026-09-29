@@ -254,3 +254,6 @@ a { color: inherit; text-decoration: none; }
 
 .btn.stop { background: rgba(255,92,92,.16); color: var(--red); border-color: rgba(255,92,92,.4); font-weight: 600; }
 .btn.stop:hover { background: rgba(255,92,92,.28); }
+
+.tabs.compact { margin: 0; gap: 2px; }
+.tabs.compact button { padding: 4px 10px; font-size: 12px; }

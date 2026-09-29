@@ -68,7 +68,10 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   const [items, setItems] = useState<Media[]>([]);
   const [filter, setFilter] = useState<"all" | "video" | "photo">(kind === "video" ? "video" : "all");
   const [storyAlbum, setStoryAlbum] = useState("");
-  const [albumOnly, setAlbumOnly] = useState(false);
+  const [queueAlbum, setQueueAlbum] = useState("");
+  const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("");
+  const albumOnly = albumFilter !== "";
+  const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
   const [syncing, setSyncing] = useState(false);
   const [preview, setPreview] = useState<Media | null>(null);
   const toast = useToast();
@@ -77,18 +80,20 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
     api.media(deviceId).then(setItems).catch((e) => toast(e.message, "err"));
     api.device(deviceId).then((d) => {
       setStoryAlbum(d.story_album || "");
+      setQueueAlbum(d.queue_album || "");
     }).catch(() => {});
   }, [deviceId]);
 
-  // default to the story album when it has anything usable in it
+  // default to the queue album when it has anything usable in it, else the story album
   useEffect(() => {
-    if (!storyAlbum || !items.length) return;
-    setAlbumOnly(items.some((m) => inAlbum(m, storyAlbum) && (kind !== "video" || m.kind === "video")));
-  }, [storyAlbum, items.length]);
+    if (!items.length) return;
+    const usable = (album: string) => !!album && items.some((m) => inAlbum(m, album) && (kind !== "video" || m.kind === "video"));
+    setAlbumFilter(usable(queueAlbum) ? "queue" : usable(storyAlbum) ? "story" : "");
+  }, [storyAlbum, queueAlbum, items.length]);
 
   const shown = useMemo(
-    () => items.filter((m) => (filter === "all" ? true : m.kind === filter)).filter((m) => (albumOnly ? inAlbum(m, storyAlbum) : true)),
-    [items, filter, albumOnly, storyAlbum],
+    () => items.filter((m) => (filter === "all" ? true : m.kind === filter)).filter((m) => (albumOnly ? inAlbum(m, activeAlbum) : true)),
+    [items, filter, albumOnly, activeAlbum],
   );
 
   const sync = () => {
@@ -101,12 +106,11 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Camera roll · {deviceName}</h2>
-          {storyAlbum && (
-            <label className="switch" title={`Only items in the "${storyAlbum}" album on the phone`}>
-              <input type="checkbox" checked={albumOnly} onChange={(e) => setAlbumOnly(e.target.checked)} />
-              <span className="small">★ {storyAlbum} album only</span>
-            </label>
-          )}
+          <div className="tabs compact" title="Show only items that are in this album on the phone">
+            <button className={albumFilter === "" ? "active" : ""} onClick={() => setAlbumFilter("")}>All</button>
+            {queueAlbum && <button className={albumFilter === "queue" ? "active" : ""} onClick={() => setAlbumFilter("queue")}>{queueAlbum}</button>}
+            {storyAlbum && <button className={albumFilter === "story" ? "active" : ""} onClick={() => setAlbumFilter("story")}>★ {storyAlbum}</button>}
+          </div>
           {kind === "any" && (
             <select className="select" style={{ width: 130 }} value={filter} onChange={(e) => setFilter(e.target.value as any)}>
               <option value="all">All</option>
@@ -119,11 +123,12 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
           <button className="btn sm ghost" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} />
+          {albumOnly && shown.length === 0 && <div className="empty">Nothing from "{activeAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
+          {(!albumOnly || shown.length > 0) && <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} />}
         </div>
         <div className="modal-foot">
           <span className="dim small grow">
-            Click an item to preview it, then "Use this". Items in the ★ album are picked from that album on the phone; anything else by its position in Recents.
+            Click an item to preview it, then "Use this". Anything you plan must be in the "{queueAlbum || "queue"}" album (or the ★ album) on the phone; that's where the app picks it from.
           </span>
         </div>
       </div>

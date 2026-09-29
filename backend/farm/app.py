@@ -36,11 +36,14 @@ def main() -> None:
         run_server()
         return
 
-    t = threading.Thread(target=run_server, daemon=True)
-    t.start()
-    if not _wait_for_port(HOST, PORT):
-        print("server failed to start", file=sys.stderr)
-        sys.exit(1)
+    if _wait_for_port(HOST, PORT, timeout=0.5):
+        print(f"Phone Farm server already running on {HOST}:{PORT}; opening a window on it")
+    else:
+        t = threading.Thread(target=run_server, daemon=True)
+        t.start()
+        if not _wait_for_port(HOST, PORT):
+            print("server failed to start", file=sys.stderr)
+            sys.exit(1)
 
     import webview  # imported late: only needed for the window
 

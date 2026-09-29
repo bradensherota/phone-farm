@@ -52,7 +52,8 @@ def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
         .filter(
             or_(
                 Job.run_at.isnot(None) & (Job.run_at <= now),
-                Job.run_at.is_(None) & (Job.run_date < today),
+                # a job from an earlier day never fires on its own (see `_expire_missed`);
+                # "Run day" or "Run now" give it an explicit time if it should still go out
                 Job.run_at.is_(None) & (Job.run_date == today) & (routine <= now),
             )
         )
@@ -106,10 +107,24 @@ class Runner:
                 log.exception("runner tick failed")
             await asyncio.sleep(TICK_SECONDS)
 
+    def _expire_missed(self, now: datetime) -> None:
+        """Planned jobs whose day has passed without running are marked failed ("missed"), so
+        they show up in the planner instead of firing unexpectedly the next time the phone is
+        resumed or the app starts."""
+        with session_scope() as s:
+            stale = s.query(Job).filter(Job.status == JobStatus.scheduled, Job.run_at.is_(None), Job.run_date < now.date()).all()
+            for j in stale:
+                j.status = JobStatus.failed
+                j.last_error = "Missed: its day passed without the phone running it"
+                s.add(JobLog(job_id=j.id, level="error", message=j.last_error))
+            if stale:
+                log.warning("%d planned job(s) from earlier days marked missed", len(stale))
+
     async def tick(self) -> None:
         if not settings_mod.as_bool(settings_mod.get("runner_enabled", "true")):
             return
         now = datetime.now()
+        self._expire_missed(now)
         with session_scope() as s:
             devices = s.query(Device).filter(Device.paused.is_(False)).all()
             wake = [d.id for d in devices if d.id not in self.busy and due_jobs(s, d, now)]

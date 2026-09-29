@@ -13,6 +13,8 @@ export default function PlannerPage() {
   const today = ymd(new Date());
 
   const { data: devices } = usePoll(api.devices, 5000);
+  const { data: settings } = usePoll(api.settings, 10000);
+  const autoStart = settings?.auto_start === "true";
   const { data: jobs, reload } = usePoll(() => api.jobs({ start, end }), 4000, [start, end]);
   const { data: starts, reload: reloadStarts } = usePoll(() => scheduleApi.get(start, end), 10000, [start, end]);
   const startFor = (deviceId: string, day: string) => (starts || []).find((x: DayStart) => x.device_id === deviceId && x.run_date === day)?.start || "";
@@ -68,7 +70,7 @@ export default function PlannerPage() {
           </thead>
           <tbody>
             {(devices || []).map((dev) => (
-              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} runDay={runDay} />
+              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} runDay={runDay} autoStart={autoStart} />
             ))}
           </tbody>
         </table>
@@ -95,6 +97,7 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, r
   startFor: (deviceId: string, day: string) => string;
   setStart: (deviceId: string, day: string, value: string) => Promise<void>;
   runDay: (device: Device, day: string, count: number) => Promise<void>;
+  autoStart: boolean;
 }) {
   const accounts = device.accounts.filter((a) => a.status !== "banned");
   return (
@@ -102,7 +105,7 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, r
       <tr className="dev-row">
         <td>
           <span className="row"><StatusDot connected={device.connected} busy={device.busy} /> {device.name}
-            <span className="meta">{device.paused ? "paused" : `default ${fmtHHMM(device.routine_start)}`}</span>
+            <span className="meta">{device.paused ? "paused" : autoStart ? `default ${fmtHHMM(device.routine_start)}` : "manual start"}</span>
           </span>
         </td>
         {days.map((d) => {
@@ -111,12 +114,14 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, r
           const pending = accounts.reduce((n, a) => n + (byCell.get(`${a.id}:${k}`) || []).filter((j) => j.status !== "done" && j.status !== "running").length, 0);
           return (
             <td key={k} className="start-cell">
-              <select className={`start-select ${v ? "set" : ""}`} value={v} title="When this phone's queue starts on this day. Jobs run down the column, one account after another." onChange={(e) => setStart(device.id, k, e.target.value)}>
-                <option value="">{fmtHHMM(device.routine_start)} (default)</option>
-                {TIME_SLOTS.map(([hhmm, label]) => <option key={hhmm} value={hhmm}>{label}</option>)}
-              </select>
+              {autoStart && (
+                <select className={`start-select ${v ? "set" : ""}`} value={v} title="When this phone's queue starts on this day. Jobs run down the column, one account after another." onChange={(e) => setStart(device.id, k, e.target.value)}>
+                  <option value="">{fmtHHMM(device.routine_start)} (default)</option>
+                  {TIME_SLOTS.map(([hhmm, label]) => <option key={hhmm} value={hhmm}>{label}</option>)}
+                </select>
+              )}
               {pending > 0 && device.kind !== "sim" && (
-                <button className="btn sm run-day" title="Start this day's whole queue on this phone right now (wake, fill the queue album, then post in order)" onClick={() => runDay(device, k, pending)}>▶ Run day ({pending})</button>
+                <button className="btn sm run-day" title="Run this day's whole queue on this phone now, in order" onClick={() => runDay(device, k, pending)}>▶ Run day ({pending})</button>
               )}
             </td>
           );

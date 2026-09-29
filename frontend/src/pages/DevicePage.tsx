@@ -45,6 +45,8 @@ export default function DevicePage() {
 function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => void }) {
   const toast = useToast();
   const ask = useConfirm();
+  const { data: settings } = usePoll(api.settings, 10000);
+  const autoStart = settings?.auto_start === "true";
   const nav = useNavigate();
   const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min });
   useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.prepare_lead_min]);
@@ -109,7 +111,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         <div className="field"><label>Queue album</label><input className="input" style={{ width: 130 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Photos album on this phone where you put the clips you plan. Reels, posts and stories are picked from here." /></div>
         <div className="field"><label>Passcode {device.has_passcode ? <span className="dim">(set)</span> : <span className="dim">(none)</span>}</label><input className="input" type="password" style={{ width: 100 }} placeholder={device.has_passcode ? "••••••" : "none"} autoComplete="off" onChange={(e) => setPasscode(e.target.value)} value={passcode} title="Lock-screen passcode the runner types to wake this phone. Stored only in this Mac's local database." /></div>
         <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>
-        <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>
+        {autoStart && <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>}
         <div className="field"><label>Gap between actions (s)</label>
           <div className="row">
             <input className="input" type="number" style={{ width: 80 }} value={form.gap_min_s} onChange={(e) => setForm({ ...form, gap_min_s: +e.target.value })} />

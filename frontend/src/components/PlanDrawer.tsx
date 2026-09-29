@@ -67,7 +67,8 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
     for (const a of actions) {
       const d = drafts[a.action];
       if (!d) continue;
-      const locked = d.status === "done" || d.status === "running";
+      const editableAfterPost = d.status === "done" && !!d.allAccounts; // copies on other accounts may still be pending
+      const locked = (d.status === "done" && !editableAfterPost) || d.status === "running";
       if (locked) continue;
       if (d.mirroredFrom) continue; // edited from the origin account
       if (d.enabled) {
@@ -115,13 +116,14 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
           {actions.map((a) => {
             const d = drafts[a.action];
             if (!d) return null;
-            const locked = d.status === "done" || d.status === "running" || !!d.mirroredFrom;
+            const editableAfterPost = d.status === "done" && !!d.allAccounts;
+            const locked = (d.status === "done" && !editableAfterPost) || d.status === "running" || !!d.mirroredFrom;
             const originHandle = d.mirroredFrom ? (device.accounts.find((x) => x.id === d.mirroredFrom)?.handle || "another account") : "";
             return (
               <div className="section" key={a.action}>
                 <div className="sec-head">
                   <label className="switch">
-                    <input type="checkbox" checked={d.enabled} disabled={locked} onChange={(e) => upd(a.action, { enabled: e.target.checked })} />
+                    <input type="checkbox" checked={d.enabled} disabled={locked || editableAfterPost} onChange={(e) => upd(a.action, { enabled: e.target.checked })} />
                   </label>
                   <h3>{a.label} <span className="dim small">· {a.media === "video" ? "video" : "photo or video"}{a.link ? " + link" : ""}</span></h3>
                   {d.status && <Pill kind={d.status}>{d.status}</Pill>}
@@ -132,9 +134,10 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                 )}
                 {d.enabled && !d.mirroredFrom && (
                   <div className="sec-body">
+                    {editableAfterPost && <div className="small dim">Already posted here. Changes below apply to the accounts that haven't posted this story yet.</div>}
                     {a.link && (
                       <label className="switch" style={{ alignSelf: "flex-start" }}>
-                        <input type="checkbox" checked={!!d.allAccounts} disabled={locked} onChange={(e) => upd(a.action, { allAccounts: e.target.checked })} />
+                        <input type="checkbox" checked={!!d.allAccounts} disabled={locked || editableAfterPost} onChange={(e) => upd(a.action, { allAccounts: e.target.checked })} />
                         <span className="small">Post this story on every account on this phone (each with its own link)</span>
                       </label>
                     )}

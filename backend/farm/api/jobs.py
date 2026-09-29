@@ -93,30 +93,38 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
             if meta["media"] == "video" and media.kind != "video":
                 raise HTTPException(400, f"{meta['label']} needs a video")
 
+        origin_posted = False  # the origin already posted; only its unposted copies take the edit
         if item.id is not None:
             job = s.get(Job, item.id)
             if job is None:
                 raise HTTPException(404, f"job {item.id} not found")
             if job.status in (JobStatus.running, JobStatus.done):
-                raise HTTPException(409, f"job {item.id} is {job.status.value} and can't be edited")
+                is_group_origin = meta["label"] == "Story" and item.all_accounts and job.group_key.startswith(f"allstories:{account.id}:")
+                if not is_group_origin or job.status == JobStatus.running:
+                    raise HTTPException(409, f"job {item.id} is {job.status.value} and can't be edited")
+                origin_posted = True
         else:
             job = Job(account_id=account.id, device_id=account.device_id, action=action)
             s.add(job)
 
-        job.account_id = account.id
-        job.device_id = account.device_id
-        job.media_id = media.id if media else None
-        job.caption = item.caption
-        job.link = item.link
-        job.link_text = item.link_text
-        job.run_date = item.run_date
-        job.run_at = item.run_at
-        job.sort_order = account.sort_order * 10 + meta["rank"]
-        if job.status in (JobStatus.failed, JobStatus.cancelled):
-            job.status = JobStatus.scheduled
-            job.attempts = 0
-            job.last_error = ""
+        if not origin_posted:
+            job.account_id = account.id
+            job.device_id = account.device_id
+            job.media_id = media.id if media else None
+            job.caption = item.caption
+            job.link = item.link
+            job.link_text = item.link_text
+            job.run_date = item.run_date
+            job.run_at = item.run_at
+            job.sort_order = account.sort_order * 10 + meta["rank"]
+            if job.status in (JobStatus.failed, JobStatus.cancelled):
+                job.status = JobStatus.scheduled
+                job.attempts = 0
+                job.last_error = ""
         saved.append(job)
+        # values the mirrored copies take (the edit, even when the origin itself already posted)
+        m_media_id = media.id if media else None
+        m_caption, m_link, m_link_text = item.caption, item.link, item.link_text
         # "post this story on every account on this phone": mirror it to the other story-capable accounts
         if meta["label"] == "Story":
             key = f"allstories:{account.id}:{item.run_date.isoformat()}"
@@ -138,7 +146,7 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                         .all()
                     )
                     # never post the same clip twice on one account
-                    if any(e.media_id == job.media_id and e.status in (JobStatus.running, JobStatus.done) for e in existing):
+                    if any(e.media_id == m_media_id and e.status in (JobStatus.running, JobStatus.done) for e in existing):
                         continue
                     # reuse this group's own copy, else an unposted story of theirs; a story that already
                     # posted stays and this one is added alongside it
@@ -147,10 +155,10 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                     if twin is None:
                         twin = Job(account_id=other.id, device_id=other.device_id, action=o_action)
                         s.add(twin)
-                    twin.media_id = job.media_id
-                    twin.caption = job.caption
-                    twin.link = other.story_link or job.link
-                    twin.link_text = job.link_text
+                    twin.media_id = m_media_id
+                    twin.caption = m_caption
+                    twin.link = other.story_link or m_link
+                    twin.link_text = m_link_text
                     twin.run_date = item.run_date
                     twin.run_at = None
                     twin.sort_order = other.sort_order * 10 + ACTIONS[o_action]["rank"]

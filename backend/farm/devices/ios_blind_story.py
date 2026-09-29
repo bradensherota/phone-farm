@@ -50,11 +50,29 @@ def _drag(bp: BlindPhone, x1, y1, x2, y2, hold_ms=350, move_ms=700, steps=12) ->
     time.sleep(1.2)
 
 
-def _find_sticker(bp: BlindPhone, text: str):
-    """The link sticker shows its display text next to a link icon; find that word."""
+def _sticker_labels(spec: ActionSpec) -> list[str]:
+    """What the link sticker might read: the display text, the link's domain (TikTok shows that
+    when no display text sticks), or TikTok's default."""
+    out = []
+    if spec.link_text:
+        out.append(spec.link_text)
+    m = re.match(r"^(?:https?://)?(?:www\.)?([^/\s]+)", spec.link or "")
+    if m:
+        out.append(m.group(1))
+    out.append("My link")
+    return out
+
+
+def _find_sticker(bp: BlindPhone, labels):
+    """The link sticker shows its text next to a link icon; find that word, whatever it reads."""
+    if isinstance(labels, str):
+        labels = [labels]
     words = bp.read()
-    w = bp.find(rf"{re.escape(text)}$", words) or bp.find(re.escape(text[:8]), words)
-    return w
+    for text in labels:
+        w = bp.find(rf"{re.escape(text)}$", words) or bp.find(re.escape(text[:8]), words)
+        if w is not None:
+            return w
+    return None
 
 
 def tt_story_blind(bp: BlindPhone, spec: ActionSpec, open_gallery) -> tuple[bool, str]:
@@ -133,10 +151,10 @@ def _story_compose(bp: BlindPhone, spec: ActionSpec, W: float, H: float) -> None
         bp.type_keys(spec.link_text)
     bp.tap_text(r"^Done$", timeout=8, what="Done", pause=2.5)
     # sticker placement: spread to max (several times, until it stops growing), then drag down
-    label = spec.link_text or "My link"
+    label = _sticker_labels(spec)
     st = _find_sticker(bp, label)
     if st is None:
-        raise FlowError("Link sticker not visible after Done")
+        raise FlowError(f"Link sticker not visible after Done (looked for {', '.join(label)})")
     # one wide spread saturates TikTok's cap; a second only if it came out unusually small
     for i in range(2):
         _spread(bp, st.cx, st.cy)

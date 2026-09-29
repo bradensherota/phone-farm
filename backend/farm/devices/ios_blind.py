@@ -262,7 +262,11 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
     told apart. Row pitch comes from the overlays when readable, else from `tile_ratio`
     (height / width of a tile). The overlay on the chosen tile is a cross-check only."""
     cols, cell_w = 3, bp.pt_w / 3
-    overlays = [w for w in words if DUR_RX.match(w.text.strip())]
+    # duration labels live inside the grid, below the All / Favorites / Photos / Videos tab row;
+    # the status-bar clock ("12:17") matches the same pattern and must never count
+    tab_row = bp.find(r"^(Favorites|Videos|Photos|All)$", words)
+    grid_min_y = (tab_row.y + tab_row.h) if tab_row is not None else 120
+    overlays = [w for w in words if DUR_RX.match(w.text.strip()) and w.y > grid_min_y]
     if overlays:
         bottoms = sorted({round(w.y + w.h) for w in overlays})
         rows = []
@@ -333,8 +337,8 @@ def _lattice_pick(bp: BlindPhone, words: list[Word], from_end: int, count: int, 
         bp.swipe(bp.pt_w / 2, H * 0.82, bp.pt_w / 2, H * 0.82 - want, duration=1.2)
         time.sleep(1.5)
         words = read_grid(bp)
-        overlays = [w for w in words if DUR_RX.match(w.text.strip())]
         tabs2 = bp.find(r"^(Favorites|Videos|Photos|All)$", words)
+        overlays = [w for w in words if DUR_RX.match(w.text.strip()) and w.y > ((tabs2.y + tabs2.h) if tabs2 is not None else 120)]
         if tabs2 is not None:
             moved = top - (tabs2.y + tabs2.h + 12)  # exact: the tab row scrolls with the grid
         else:

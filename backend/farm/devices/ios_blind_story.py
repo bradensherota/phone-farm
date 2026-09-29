@@ -155,6 +155,11 @@ def _story_compose(bp: BlindPhone, spec: ActionSpec, W: float, H: float) -> None
     st = _find_sticker(bp, label)
     if st is None:
         raise FlowError(f"Link sticker not visible after Done (looked for {', '.join(label)})")
+    # Newer TikTok builds place the link themselves: it slides to the bottom right as a fixed
+    # "link button" ("Tap to change style") and can't be moved or resized. Leave it there.
+    if st.cy > H * 0.7 or bp.find(r"Tap to change style", bp._words):
+        bp.log("info", f"TikTok placed the link itself at ({st.cx:.0f},{st.cy:.0f}); leaving it (this build's fixed style)")
+        return
     # one wide spread saturates TikTok's cap; a second only if it came out unusually small
     for i in range(2):
         _spread(bp, st.cx, st.cy)

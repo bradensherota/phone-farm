@@ -233,11 +233,11 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
         j.status = JobStatus.scheduled
     s.add(JobLog(job_id=j.id, level="info", message=f"Manual run: stage '{stage}' ({'only this stage' if mode == 'only' else 'and everything after'})"))
     if mode == "from":
-        # "and everything after" means the rest of the day too: re-arm later jobs that failed
-        # or were stopped, so the queue carries on past this one
+        # "and everything after" means the rest of the day: every job of the day that failed or
+        # was stopped is re-armed (earlier ones too), so nothing planned is left behind
         later = (
             s.query(Job)
-            .filter(Job.device_id == j.device_id, Job.run_date == j.run_date, Job.sort_order > j.sort_order,
+            .filter(Job.device_id == j.device_id, Job.run_date == j.run_date, Job.id != j.id,
                     Job.status.in_([JobStatus.failed, JobStatus.cancelled]))
             .all()
         )

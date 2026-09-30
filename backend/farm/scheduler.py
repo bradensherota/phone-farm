@@ -242,11 +242,12 @@ class Runner:
                         return
                     job_id = jobs[0].id
                     gap_min, gap_max = device.gap_min_s, device.gap_max_s
-                if not first:
+                if not first and (gap_min or gap_max):
                     pace = float(settings_mod.get("pace_multiplier", "1.0") or 1.0)
-                    gap = random.uniform(gap_min, gap_max) * pace
-                    log.info("%s: waiting %.0fs before next action", device_id, gap)
-                    await asyncio.sleep(gap)
+                    gap = random.uniform(gap_min, max(gap_min, gap_max)) * pace
+                    if gap > 0:
+                        log.info("%s: waiting %.0fs before next action", device_id, gap)
+                        await asyncio.sleep(gap)
                 first = False
                 await asyncio.to_thread(self._execute, device_id, job_id)
         except asyncio.CancelledError:

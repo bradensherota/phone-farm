@@ -72,8 +72,8 @@ class Device(Base):
     model: Mapped[str] = mapped_column(String, default="")
     kind: Mapped[str] = mapped_column(String, default="sim")  # "sim" | "ios"
     routine_start: Mapped[str] = mapped_column(String, default="10:00")  # HH:MM local
-    gap_min_s: Mapped[int] = mapped_column(Integer, default=90)
-    gap_max_s: Mapped[int] = mapped_column(Integer, default=300)
+    gap_min_s: Mapped[int] = mapped_column(Integer, default=0)  # seconds between actions: none by default, back to back
+    gap_max_s: Mapped[int] = mapped_column(Integer, default=0)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it

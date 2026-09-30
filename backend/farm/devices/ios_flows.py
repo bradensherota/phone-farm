@@ -685,15 +685,12 @@ def ig_story(p: Phone, spec: ActionSpec):
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share to your story'")
             return True, "Dry run reached Share to your story"
-        p.tap(name="share-to-your-story", what="Share to your story", pause=2)
-        # Instagram drops back to whatever tab the story was started from (the profile when
-        # started from the profile picture); stories never show on the feed itself.
+        p.tap(name="share-to-your-story", what="Share to your story", pause=0.5)
+        # the editor closing is the signal; Instagram uploads in the background
         for _ in range(40):
-            if not p.exists(name="share-to-your-story", timeout=1) and (
-                p.exists(name="profile-tab", timeout=1) or p.exists(name="mainfeed-tab", timeout=0.5)
-            ):
+            if not p.exists(name="share-to-your-story", timeout=0.5):
                 return True, "Story shared"
-            time.sleep(1)
+            time.sleep(0.5)
         raise FlowError("Story editor did not close after Share")
 
     return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
@@ -813,13 +810,14 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share'")
             return True, "Dry run reached Share"
-        p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=3)
-        # Instagram returns to the feed/profile while it uploads in the background
+        p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=0.5)
+        # the share sheet closing is the signal; Instagram uploads in the background and the
+        # next job can start straight away
         for _ in range(30):
-            if p.exists(name="mainfeed-tab", timeout=1) or p.exists(name="profile-tab", timeout=1):
+            if not p.exists(name="share-sheet-share-button", timeout=0.5) or p.exists(name="mainfeed-tab", timeout=0.5) or p.exists(name="profile-tab", timeout=0.5):
                 return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
-            time.sleep(1)
-        raise FlowError("Did not return to the feed after Share")
+            time.sleep(0.5)
+        raise FlowError("Did not leave the share screen after Share")
 
     return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])
 

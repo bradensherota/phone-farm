@@ -21,9 +21,13 @@ def create_account(body: AccountIn, s: Session = Depends(get_session)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     n = s.query(func.count(Account.id)).filter(Account.device_id == body.device_id).scalar() or 0
+    link = (body.story_link or "").strip()
+    if not link and platform in (Platform.instagram, Platform.tiktok):
+        from .. import settings as settings_mod
+        link = settings_mod.get(f"default_link_{platform.value}", "").strip()
     a = Account(
         device_id=body.device_id, platform=platform, handle=body.handle.lstrip("@"),
-        story_link=body.story_link, notes=body.notes, status=status, sort_order=n,
+        story_link=link, notes=body.notes, status=status, sort_order=n,
     )
     s.add(a)
     s.commit()

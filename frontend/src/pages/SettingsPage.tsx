@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useToast } from "../components/common";
 
-const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" }[] = [
+const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" | "text" }[] = [
   { key: "runner_enabled", label: "Runner enabled", help: "Master switch. Off = nothing posts anywhere.", type: "bool" },
+  { key: "default_link_instagram", label: "Default Instagram story link", help: "Given to a new Instagram account when you don't enter a link. Each account's link can still be changed on its phone page.", type: "text" },
+  { key: "default_link_tiktok", label: "Default TikTok story link", help: "Same, for new TikTok accounts.", type: "text" },
   { key: "auto_start", label: "Start days automatically at their time", help: "Off: nothing runs until you press Start today on the Phones page (or Run day / Run now). On: each phone's queue starts by itself at the day's start time.", type: "bool" },
   { key: "tiktok_stories", label: "TikTok stories", help: "Off: TikTok stories can't be planned and any planned ones are cancelled. Turn on again once link stickers work by hand on the phone.", type: "bool" },
   { key: "sleep_after_queue", label: "Lock the phone after its day is done", help: "Off: the phone stays unlocked after posting (Auto-Lock should be Never). On: the app locks the screen when the queue finishes. The runner has died twice after an hour or so locked, so leave this off until an overnight test passes.", type: "bool" },
@@ -46,6 +48,8 @@ export default function SettingsPage() {
                 <b className="grow">{f.label}</b>
                 {f.type === "bool" ? (
                   <label className="switch" title="Takes effect immediately"><input type="checkbox" checked={values[f.key] === "true"} onChange={(e) => flip(f.key, f.label, e.target.checked)} /></label>
+                ) : f.type === "text" ? (
+                  <input className="input" style={{ width: 260 }} type="text" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
                 ) : (
                   <input className="input" style={{ width: 110 }} type="number" step="any" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
                 )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, ActionMeta, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, api, fmtDateTime, parseYmd, toLocalInput } from "../lib/api";
 import { MediaThumb, Pill, PlatformIcon, usePoll, useToast } from "./common";
@@ -51,17 +51,20 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
-  // Only rebuild drafts when the underlying jobs actually change (the planner polls, so
-  // the `jobs` array identity changes every few seconds even when nothing did).
-  const jobsKey = jobs.map((j) => `${j.id}:${j.status}:${j.attempts}`).join(",");
+  // Rebuild the form only when the planned content itself changes (a job added, removed, or
+  // its media/text edited elsewhere), never because a status ticked over while the phone is
+  // posting, and never while there are unsaved edits here: that used to wipe typed text.
+  const jobsKey = jobs.map((j) => `${j.id}:${j.media_id}:${j.caption}:${j.link}:${j.link_text}:${j.group_key}`).join(",");
+  const dirtyRef = useRef(false);
   useEffect(() => {
+    if (dirtyRef.current) return;
     const d: Record<string, Draft> = {};
     for (const a of actions) d[a.action] = draftFrom(a, account, jobs.find((j) => j.action === a.action));
     setDrafts(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.id, date, jobsKey, actions]);
 
-  const upd = (k: ActionKey, patch: Partial<Draft>) => setDrafts((d) => ({ ...d, [k]: { ...d[k], ...patch } }));
+  const upd = (k: ActionKey, patch: Partial<Draft>) => { dirtyRef.current = true; setDrafts((d) => ({ ...d, [k]: { ...d[k], ...patch } })); };
 
   const save = async () => {
     const upserts: JobIn[] = [];

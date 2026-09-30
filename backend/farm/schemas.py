@@ -78,6 +78,7 @@ class DeviceOut(ORM):
     queue_album: str = "Farm Queue"
     prepare_lead_min: int = 60
     has_passcode: bool = False
+    album_sorts: dict = {}
     connected: bool = False
     connecting: bool = False
     error: str = ""

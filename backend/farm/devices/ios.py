@@ -432,6 +432,7 @@ class IOSDriver(Driver):
                     "ORDER BY ZADDEDDATE DESC"
                 ).fetchall()
                 albums_by_asset = _album_membership(db)
+                self.album_sorts = _album_sorts(db)
             finally:
                 db.close()
         items: list[RollItem] = []
@@ -642,6 +643,22 @@ def _album_membership(db) -> dict[int, list[str]]:
             out.setdefault(asset_pk, []).append(title.strip())
         if rows:
             break
+    return out
+
+
+def _album_sorts(db) -> dict[str, dict]:
+    """album title -> how the Photos app orders it: {"by": "date" | "custom", "ascending": bool}.
+    ZCUSTOMSORTKEY 1 = by capture date (ascending = oldest first); 0 = arranged by hand."""
+    out: dict[str, dict] = {}
+    try:
+        rows = db.execute(
+            "SELECT ZTITLE, ZCUSTOMSORTKEY, ZCUSTOMSORTASCENDING FROM ZGENERICALBUM "
+            "WHERE ZKIND = 2 AND ZTRASHEDSTATE = 0 AND ZTITLE IS NOT NULL"
+        ).fetchall()
+    except Exception:
+        return out
+    for title, key, asc in rows:
+        out[title.strip()] = {"by": "custom" if key == 0 else "date", "ascending": bool(asc) if asc is not None else True}
     return out
 
 

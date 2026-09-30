@@ -226,6 +226,12 @@ class DeviceManager:
         # Pass 1: mirror the listing. Short transaction, no device I/O inside it.
         todo: list[tuple[int, str, bool, bool]] = []  # (row id, filename, needs_thumb, needs_probe)
         with session_scope() as s:
+            sorts = getattr(drv, "album_sorts", None)
+            if isinstance(sorts, dict):
+                dev = s.get(Device, device_id)
+                if dev is not None:
+                    import json as _json
+                    dev.album_sorts = _json.dumps(sorts)
             existing = {m.filename: m for m in s.query(MediaItem).filter_by(device_id=device_id).all()}
             seen: set[str] = set()
             for it in items:  # newest first

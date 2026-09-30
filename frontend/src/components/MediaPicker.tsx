@@ -69,6 +69,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   const [filter, setFilter] = useState<"all" | "video" | "photo">(kind === "video" ? "video" : "all");
   const [storyAlbum, setStoryAlbum] = useState("");
   const [queueAlbum, setQueueAlbum] = useState("");
+  const [albumSorts, setAlbumSorts] = useState<Record<string, { by: string; ascending: boolean }>>({});
   const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("");
   const albumOnly = albumFilter !== "";
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
@@ -81,6 +82,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
     api.device(deviceId).then((d) => {
       setStoryAlbum(d.story_album || "");
       setQueueAlbum(d.queue_album || "");
+      setAlbumSorts(d.album_sorts || {});
     }).catch(() => {});
   }, [deviceId]);
 
@@ -91,10 +93,19 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
     setAlbumFilter(usable(queueAlbum) ? "queue" : usable(storyAlbum) ? "story" : "");
   }, [storyAlbum, queueAlbum, items.length]);
 
-  const shown = useMemo(
-    () => items.filter((m) => (filter === "all" ? true : m.kind === filter)).filter((m) => (albumOnly ? inAlbum(m, activeAlbum) : true)),
-    [items, filter, albumOnly, activeAlbum],
-  );
+  // inside an album, show the clips in the order the phone's album shows them (capture date,
+  // oldest or newest first as set on the phone); "All" keeps the Recents order
+  const shown = useMemo(() => {
+    const list = items.filter((m) => (filter === "all" ? true : m.kind === filter)).filter((m) => (albumOnly ? inAlbum(m, activeAlbum) : true));
+    if (!albumOnly) return list;
+    const sort = albumSorts[activeAlbum.trim()];
+    const asc = sort ? sort.ascending : true;
+    return [...list].sort((a, b) => {
+      const d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return asc ? d : -d;
+    });
+  }, [items, filter, albumOnly, activeAlbum, albumSorts]);
+  const orderNote = albumOnly ? ((albumSorts[activeAlbum.trim()]?.ascending ?? true) ? "oldest first, as on the phone" : "newest first, as on the phone") : "";
 
   const sync = () => {
     setSyncing(true);
@@ -111,6 +122,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
             {queueAlbum && <button className={albumFilter === "queue" ? "active" : ""} onClick={() => setAlbumFilter("queue")}>{queueAlbum}</button>}
             {storyAlbum && <button className={albumFilter === "story" ? "active" : ""} onClick={() => setAlbumFilter("story")}>★ {storyAlbum}</button>}
           </div>
+          {orderNote && <span className="small dim">{orderNote}</span>}
           {kind === "any" && (
             <select className="select" style={{ width: 130 }} value={filter} onChange={(e) => setFilter(e.target.value as any)}>
               <option value="all">All</option>

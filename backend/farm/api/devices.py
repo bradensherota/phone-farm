@@ -36,6 +36,11 @@ def device_out(s: Session, d: Device) -> DeviceOut:
     out = DeviceOut.model_validate(d)
     out.connected = bool(info.get("connected"))
     out.has_passcode = bool(d.passcode)
+    try:
+        import json as _json
+        out.album_sorts = _json.loads(d.album_sorts or "{}")
+    except Exception:
+        out.album_sorts = {}
     out.connecting = bool(info.get("connecting"))
     out.error = str(info.get("error") or "")
     out.busy = d.id in runner.busy

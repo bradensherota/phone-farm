@@ -42,6 +42,7 @@ export interface Device {
   paused: boolean;
   sort_order: number;
   story_album: string;
+  album_sorts: Record<string, { by: "date" | "custom"; ascending: boolean }>;
   queue_album: string;
   prepare_lead_min: number;
   has_passcode: boolean;

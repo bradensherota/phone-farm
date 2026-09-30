@@ -80,6 +80,7 @@ class Device(Base):
     queue_album: Mapped[str] = mapped_column(String, default="Farm Queue")  # album the app fills with scheduled items and empties after posting
     prepare_lead_min: Mapped[int] = mapped_column(Integer, default=60)  # fill the queue album this many minutes before the routine
     passcode: Mapped[str] = mapped_column(String, default="")  # lock-screen passcode, typed by the runner to wake the phone (local DB only)
+    album_sorts: Mapped[str] = mapped_column(Text, default="{}")  # JSON: album title -> {"by": "date"|"custom", "ascending": bool}, read from the phone at sync
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     accounts: Mapped[list[Account]] = relationship(

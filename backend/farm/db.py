@@ -49,6 +49,7 @@ _ADDED_COLUMNS = [
     ("jobs", "failed_stage", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "run_stage", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "run_mode", "VARCHAR NOT NULL DEFAULT ''"),
+    ("devices", "album_sorts", "TEXT NOT NULL DEFAULT '{}'"),
 ]
 
 

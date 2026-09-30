@@ -82,6 +82,7 @@ class Runner:
         self._stopping = False
         self._prepared_on: dict[str, object] = {}
         self.force: set[str] = set()  # phones allowed to keep going through the day although paused
+        self._drops: dict[int, int] = {}  # job id -> runner drops seen (bounded so a dead phone can't loop forever)
 
     # ---- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -294,14 +295,11 @@ class Runner:
                 job.last_stage = ""
             job.run_stage, job.run_mode = "", ""
             from_start = not stage_only and not stage_from
-        # the runner must be up before anything else: the album check reads the phone
-        if drv is not None and not drv.is_connected():
-            with session_scope() as s:
-                s.add(JobLog(job_id=job_id, level="warn", message="Phone's runner isn't answering; restarting it"))
-            try:
-                drv.connect()
-            except Exception as e:
-                log.warning("%s: runner restart failed: %s", device_id, e)
+        # the runner must be up and steady before anything else; a job never spends an attempt
+        # on a runner that is down or still coming back
+        if drv is not None and drv.kind != "sim" and not self._runner_ready(device_id, job_id, drv):
+            self._defer(job_id, "Phone's runner isn't back yet; trying again in a minute", seconds=60)
+            return
         if drv is not None and hasattr(drv, "wake") and drv.is_connected():
             drv.wake()  # wake and unlock before anything touches the screen
         auto_album = settings_mod.as_bool(settings_mod.get("queue_auto", "false"))
@@ -397,6 +395,16 @@ class Runner:
                 pass
             self._finish(job_id, ok=False, message=f"Driver error: {e}", shot=shot, attempt=attempt, stage=stage_now["name"], manual=bool(manual))
             return
+        if not result.ok and _is_runner_drop(result.message):
+            self._drops[job_id] = self._drops.get(job_id, 0) + 1
+            if self._drops[job_id] <= 4:
+                with session_scope() as s:
+                    j = s.get(Job, job_id)
+                    if j is not None:
+                        j.attempts = max(0, j.attempts - 1)  # this one doesn't count
+                        j.failed_stage = stage_now["name"]
+                self._defer(job_id, f"Phone's runner dropped mid-step ({result.message[:60]}); retrying in a minute", seconds=45)
+                return
         self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt,
                      stage=stage_now["name"], partial=result.partial, manual=bool(manual) or not getattr(result, "retry", True))
         if result.ok and not result.partial and auto_album:
@@ -465,6 +473,48 @@ class Runner:
         except Exception:
             log.exception("queue release failed")
 
+    def _runner_ready(self, device_id: str, job_id: int, drv, wait_s: float = 150.0) -> bool:
+        """True once the runner answers status and lock-state twice in a row. Restarts it when it
+        is down and waits (bounded) for it to come back."""
+        import time as _time
+
+        def steady() -> bool:
+            for _ in range(2):
+                if not drv.is_connected() or drv.is_locked(default=None) is None:
+                    return False
+                _time.sleep(1.0)
+            return True
+
+        if steady():
+            return True
+        with session_scope() as s:
+            s.add(JobLog(job_id=job_id, level="warn", message="Phone's runner isn't answering; restarting it and waiting for it to settle"))
+        if device_id not in self.manager._connecting:
+            try:
+                drv.connect()
+            except Exception as e:
+                log.warning("%s: runner restart failed: %s", device_id, e)
+        deadline = _time.time() + wait_s
+        while _time.time() < deadline:
+            if steady():
+                with session_scope() as s:
+                    s.add(JobLog(job_id=job_id, level="info", message="Runner is back"))
+                return True
+            _time.sleep(3.0)
+        return False
+
+    def _defer(self, job_id: int, message: str, seconds: int) -> None:
+        """Put a job back in the queue a little later without counting it as an attempt."""
+        with session_scope() as s:
+            job = s.get(Job, job_id)
+            if job is None:
+                return
+            job.status = JobStatus.scheduled
+            job.run_at = datetime.now() + timedelta(seconds=seconds)
+            job.last_error = message
+            s.add(JobLog(job_id=job_id, level="warn", message=message))
+        self.current.pop(job.device_id, None)
+
     def _finish(self, job_id: int, ok: bool, message: str, shot: bytes | None, attempt: int,
                 stage: str = "", partial: bool = False, manual: bool = False) -> None:
         max_attempts = int(settings_mod.get("max_attempts", "2") or 2)
@@ -505,6 +555,16 @@ class Runner:
                 else:
                     job.status = JobStatus.failed
                     s.add(JobLog(job_id=job_id, level="error", message=f"{message}. Giving up after {job.attempts} attempts."))
+
+
+_DROP_SIGNS = ("Remote end closed connection", "Connection refused", "Connection reset", "urlopen error",
+               "WDAEmptyResponseError", "Errno 61", "Errno 54", "RemoteDisconnected")
+
+
+def _is_runner_drop(message: str) -> bool:
+    """A failure caused by the runner on the phone dying or restarting, not by the flow."""
+    m = message or ""
+    return any(sign in m for sign in _DROP_SIGNS)
 
 
 _STAGES = ("open", "pick", "compose", "post")

@@ -259,13 +259,8 @@ class Runner:
             self.current.pop(device_id, None)
             self._workers.pop(device_id, None)
             self.force.discard(device_id)
-            # queue done: leave the phone on its home screen, and lock it if that's wanted
+            # queue done: stay in whatever app is open (never leave Instagram); lock only if wanted
             drv = self.manager.driver(device_id)
-            if drv is not None and hasattr(drv, "go_home"):
-                try:
-                    await asyncio.to_thread(drv.go_home)
-                except Exception:
-                    pass
             if drv is not None and hasattr(drv, "sleep") and settings_mod.as_bool(settings_mod.get("sleep_after_queue", "false")):
                 try:
                     await asyncio.to_thread(drv.sleep)

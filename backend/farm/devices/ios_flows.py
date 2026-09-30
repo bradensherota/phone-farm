@@ -60,10 +60,20 @@ class Phone:
             self.log("warn", f"Could not apply runner settings: {e}")
 
     def open(self, bundle_id: str) -> None:
+        """Attach to the app, bringing it to the front. It is never relaunched if it's already
+        running, and never terminated when the session ends, so Instagram stays open all day."""
         self.log("info", f"Open {bundle_id}")
-        self.s = self.c.session(bundle_id)
+        caps = {
+            "bundleId": bundle_id, "arguments": [], "environment": {},
+            "shouldWaitForQuiescence": False,
+            "forceAppLaunch": False,      # activate a running app instead of restarting it
+            "shouldTerminateApp": False,  # leave the app running when the session is dropped
+        }
+        res = self.c.http.post("session", {"capabilities": {"alwaysMatch": caps}, "desiredCapabilities": caps})
+        self.s = wda.Client(self.base, _session_id=res.sessionId)
+        self.s.timeout = 60
         self.apply_settings()
-        time.sleep(2.5)
+        time.sleep(1.0)
 
     def attach(self) -> None:
         """Attach to whatever is on screen without launching anything (a stage run on its own)."""
@@ -104,10 +114,8 @@ class Phone:
             return
         try:
             if terminate_app:
-                self.s.close()
-            else:
-                # detach without killing the app: start a bare session (no bundle) and drop it
-                self.c.session()
+                self.c.http.post("session", {"capabilities": {"alwaysMatch": {"bundleId": "", "shouldTerminateApp": True}}})
+            self.s.close()  # sessions are opened with shouldTerminateApp off, so this leaves the app running
         except Exception:
             pass
         self.s = None

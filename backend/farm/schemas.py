@@ -55,6 +55,8 @@ class MediaOut(ORM):
     index: int | None = None  # position in Recents, newest first (0-based)
     posted_at: datetime | None = None  # latest finished post that used this item
     posted_on: str = ""  # "@handle (Reel), @other (Story)" for the tooltip
+    scheduled_for: date | None = None  # nearest day this item is still planned for
+    scheduled_on: str = ""  # "@handle (Reel) Sep 30, …" for the tooltip
 
 
 # ---- devices ---------------------------------------------------------------

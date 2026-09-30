@@ -20,12 +20,17 @@ export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: M
   return (
     <div className="roll">
       {items.map((m) => (
-        <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""} ${m.posted_at ? "posted" : ""}`} onClick={() => onSelect(m)} title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}`}>
+        <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""} ${m.posted_at ? "posted" : ""}`} onClick={() => onSelect(m)} title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
           <div className="th"><img src={thumbUrl(m)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /></div>
           <span className="badge">{m.kind === "video" ? `▶ ${fmtDuration(m.duration_s)}` : "photo"}</span>
           {m.index !== null && <span className="idx">#{m.index + 1}</span>}
           {storyAlbum && inAlbum(m, storyAlbum) && <span className="badge album">★ {storyAlbum}</span>}
-          {m.posted_at && <span className="badge posted" title={m.posted_on ? `Posted on ${m.posted_on}` : "Posted"}>Posted {new Date(m.posted_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>}
+          {(m.posted_at || m.scheduled_for) && (
+            <span className="tags">
+              {m.posted_at && <span className="badge posted" title={m.posted_on ? `Posted on ${m.posted_on}` : "Posted"}>Posted {new Date(m.posted_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>}
+              {m.scheduled_for && <span className="badge scheduled" title={m.scheduled_on ? `Planned: ${m.scheduled_on}` : "Planned"}>Scheduled {new Date(m.scheduled_for + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}</span>}
+            </span>
+          )}
           <div className="meta">
             <span className="fn">{m.filename.split("/").pop()}</span>
             <span>{new Date(m.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>

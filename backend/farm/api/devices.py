@@ -311,6 +311,14 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
     )
     for j in done:
         posted.setdefault(j.media_id, []).append(j)
+    planned: dict[int, list] = {}
+    for j in (
+        s.query(Job).options(selectinload(Job.account))
+        .filter(Job.device_id == device_id, Job.status.in_([_JS.scheduled, _JS.running, _JS.failed]), Job.media_id.isnot(None))
+        .order_by(Job.run_date.asc())
+        .all()
+    ):
+        planned.setdefault(j.media_id, []).append(j)
     out = []
     for i, m in enumerate(rows):
         mo = MediaOut.model_validate(m)
@@ -320,6 +328,10 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
         if js:
             mo.posted_at = js[0].finished_at
             mo.posted_on = ", ".join(f"@{j.account.handle} ({ACTIONS[j.action]['label']})" for j in js if j.account)
+        ps = planned.get(m.id)
+        if ps:
+            mo.scheduled_for = ps[0].run_date
+            mo.scheduled_on = ", ".join(f"@{j.account.handle} ({ACTIONS[j.action]['label']}) {j.run_date.strftime('%b %-d')}" for j in ps if j.account)
         out.append(mo)
     return out
 

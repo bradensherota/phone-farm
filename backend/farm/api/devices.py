@@ -300,11 +300,26 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
         .order_by(func.coalesce(MediaItem.added_at, MediaItem.created_at).desc(), MediaItem.id.desc())
         .all()
     )
+    # what has already gone out with each item, so the picker can mark it
+    from ..models import ACTIONS, JobStatus as _JS
+    posted: dict[int, list] = {}
+    done = (
+        s.query(Job).options(selectinload(Job.account))
+        .filter(Job.device_id == device_id, Job.status == _JS.done, Job.media_id.isnot(None))
+        .order_by(Job.finished_at.desc())
+        .all()
+    )
+    for j in done:
+        posted.setdefault(j.media_id, []).append(j)
     out = []
     for i, m in enumerate(rows):
         mo = MediaOut.model_validate(m)
         mo.has_thumb = bool(m.thumb_path)
         mo.index = i
+        js = posted.get(m.id)
+        if js:
+            mo.posted_at = js[0].finished_at
+            mo.posted_on = ", ".join(f"@{j.account.handle} ({ACTIONS[j.action]['label']})" for j in js if j.account)
         out.append(mo)
     return out
 

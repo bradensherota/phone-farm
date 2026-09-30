@@ -26,6 +26,8 @@ export interface Media {
   present: boolean;
   has_thumb: boolean;
   index: number | null;
+  posted_at: string | null;
+  posted_on: string;
 }
 
 export interface WakeTestEvent { at: string; step: number; phase: "start" | "wake" | "sleep" | "done" | "cancel"; ok: boolean; detail: string }

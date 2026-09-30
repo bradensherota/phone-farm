@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import field_validator, BaseModel, ConfigDict, Field
 
 
 class ORM(BaseModel):
@@ -79,6 +79,18 @@ class DeviceOut(ORM):
     prepare_lead_min: int = 60
     has_passcode: bool = False
     album_sorts: dict = {}
+
+    @field_validator("album_sorts", mode="before")
+    @classmethod
+    def _album_sorts_json(cls, v):
+        # stored as JSON text on the device row
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v or "{}")
+            except Exception:
+                return {}
+        return v or {}
     connected: bool = False
     connecting: bool = False
     error: str = ""

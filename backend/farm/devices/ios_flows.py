@@ -841,12 +841,25 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
             p.log("info", "DRY RUN: stopping before 'Share'")
             return True, "Dry run reached Share"
         p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=0.5)
-        # the share sheet closing is the signal; Instagram uploads in the background and the
-        # next job can start straight away
-        for _ in range(30):
-            if not p.exists(name="share-sheet-share-button", timeout=0.5) or p.exists(name="mainfeed-tab", timeout=0.5) or p.exists(name="profile-tab", timeout=0.5):
-                return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
-            time.sleep(0.5)
+        # Posted = the share screen is gone AND a tab bar is back. A pop-up (the trial reel
+        # notice, for one) can swallow the tap and hide the button for a moment, so a still
+        # visible share screen just gets Share pressed again.
+        def posted() -> bool:
+            gone = not p.exists(name="share-sheet-share-button", timeout=0.5)
+            return gone and (p.exists(name="mainfeed-tab", timeout=0.5) or p.exists(name="profile-tab", timeout=0.5))
+        for attempt in range(4):
+            for _ in range(8):
+                if posted():
+                    return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
+                time.sleep(0.5)
+            # clear a pop-up if one is sitting over the sheet, then press Share again
+            p.tap_if(predicate="type == 'XCUIElementTypeButton' AND (label == 'OK' OR label == 'Got it' OR label == 'Continue' OR label == 'Share anyway')",
+                     what="dismiss pop-up", timeout=0.5, pause=0.8)
+            if p.exists(name="share-sheet-share-button", timeout=1.5):
+                p.log("info", f"Share screen still up; pressing Share again ({attempt + 2}/4)")
+                p.tap(name="share-sheet-share-button", what="Share", timeout=5, pause=0.5)
+        if posted():
+            return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
         raise FlowError("Did not leave the share screen after Share")
 
     return run_stages(p.log, spec, [("open", open_), ("pick", pick), ("compose", compose), ("post", post)])

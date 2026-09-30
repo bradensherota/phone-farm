@@ -504,13 +504,15 @@ def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
                 scrubs += 1
                 ig_scrub_to(p, index / total)
                 continue
-            # close: a full flick moves ~25 cells, so scale it to the distance
+            # close: a full flick moves ~25 cells, so scale it to the distance. Instagram only
+            # instantiates the cells on screen, so a target just above the first visible one
+            # (gap -1..-3) needs a small scroll *up*, never down.
             if gap > 0:
-                p.flick("up", strength=1.0 if gap > 20 else max(0.25, gap / 25))
-            elif gap < -3:
-                p.flick("down", strength=1.0 if -gap > 20 else max(0.25, -gap / 25))
+                p.flick("up", strength=1.0 if gap > 20 else max(0.2, gap / 25))
+            elif gap < 0:
+                p.flick("down", strength=1.0 if -gap > 20 else max(0.2, -gap / 25))
             else:
-                p.flick("up", strength=0.25)  # should be on screen but isn't instantiated yet; nudge
+                p.flick("down", strength=0.2)  # should be on screen but isn't instantiated yet; nudge
             continue
         if e:
             if _label_matches(e.label, date_part, dur_part, spec.media_kind):

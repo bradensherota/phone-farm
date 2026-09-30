@@ -389,6 +389,15 @@ def ig_scrub_to(p: Phone, frac: float) -> None:
     p.log("info", f"Scrub landed at {(after[0].value if after else '?')}")
 
 
+def ig_dismiss_draft_prompt(p: Phone) -> bool:
+    """Instagram sometimes asks "Continue editing your draft?" when the reel composer opens,
+    even after a successful post. "Start new video" clears it and leaves the gallery as it
+    should be. Returns True when the prompt was there."""
+    if p.tap_if(label="Start new video", what="Start new video (dismiss draft prompt)", timeout=1.0, pause=1.5):
+        return True
+    return False
+
+
 def ig_select_album(p: Phone, title: str) -> None:
     """Switch Instagram's gallery from Recents to a Photos album by name (title may carry a
     trailing space on the phone, so match by prefix)."""
@@ -397,12 +406,22 @@ def ig_select_album(p: Phone, title: str) -> None:
         p.log("info", f"Album '{title}' already selected")
         return
     p.log("info", f"Switch gallery to album '{title}'")
+    ig_dismiss_draft_prompt(p)
     # the dropdown button carries the current selection's name
     sel = p.el(predicate="label BEGINSWITH 'Gallery Selection'").wait(timeout=5, raise_error=False)
     if not sel:
         raise FlowError("Gallery album dropdown not found")
     sel.tap()
     time.sleep(1.2)
+    if not p.exists(name="menu-item-All albums", timeout=3):
+        # the dropdown didn't open: something (the draft prompt) is over the gallery
+        if ig_dismiss_draft_prompt(p):
+            p.log("info", "Draft prompt was in the way; tapping the dropdown again")
+        else:
+            p.log("warn", "Dropdown didn't open; tapping it again")
+        sel = p.el(predicate="label BEGINSWITH 'Gallery Selection'").wait(timeout=5, raise_error=False) or sel
+        sel.tap()
+        time.sleep(1.2)
     p.tap(name="menu-item-All albums", what="All albums", timeout=8)
     p.wait(label="Select album", what="album sheet", timeout=8)
     pred = f"label BEGINSWITH '{title}' AND label CONTAINS 'items'"
@@ -789,6 +808,7 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
             p.tap(name="profile-add-button", what="Create (+)")
             p.tap(name="creation-reel", what="Reel")
             p.wait(name="gallery-header-title", what="reel gallery")
+        ig_dismiss_draft_prompt(p)
         ms = p.el(name="multi-select").wait(timeout=3, raise_error=False)
         if ms and (ms.label or "").lower() == "cancel":
             p.log("info", "Turn off multi-select")

@@ -137,7 +137,10 @@ class Runner:
         if not settings_mod.as_bool(settings_mod.get("runner_enabled", "true")):
             return
         now = datetime.now()
-        self._expire_missed(now)
+        if settings_mod.as_bool(settings_mod.get("auto_start", "false")):
+            # only when days start by themselves does "its day passed" mean anything; with
+            # manual starts a plan simply waits until Run day / Start today is pressed
+            self._expire_missed(now)
         self._cancel_disabled()
         with session_scope() as s:
             devices = s.query(Device).filter(Device.paused.is_(False)).all()

@@ -23,7 +23,14 @@ if [ -z "$TEAM" ]; then
   TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | grep -oE 'teamID = "?[A-Z0-9]{10}' | head -1 | grep -oE '[A-Z0-9]{10}$' || true)
 fi
 if [ -z "$TEAM" ]; then
-  echo "No Apple team found. Open Xcode → Settings → Accounts, sign in with any Apple ID (a free one is fine), then run again." >&2
+  cat >&2 <<MSG
+No Apple signing certificate on this Mac yet. Xcode creates one the first time it signs something:
+  1. Xcode → Settings → Accounts: sign in with any Apple ID (a free one is fine).
+  2. Open $SRC/WebDriverAgent.xcodeproj in Xcode, select the WebDriverAgentRunner target,
+     Signing & Capabilities, tick "Automatically manage signing", pick your team (Personal Team is fine).
+  3. Press Rebuild runner in the app (or run this again).
+Or enter your 10-character Team ID in the app's Settings → Apple Team ID.
+MSG
   exit 2
 fi
 SLUG=$(id -un | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')

@@ -124,8 +124,10 @@ class IOSDriver(Driver):
             logf.write(b"\n==== rebuilding the runner ====\n")
             r = subprocess.run(args, stdout=logf, stderr=logf, timeout=1500)
         if r.returncode == 2:
-            raise RuntimeError("No Apple team found on this Mac. Sign an Apple ID into Xcode (Xcode → Settings → Accounts), "
-                               "or enter your Team ID in Settings → Apple Team ID, then press Rebuild runner.")
+            raise RuntimeError("No Apple signing certificate on this Mac yet. In Xcode: Settings → Accounts, sign in with an Apple ID; "
+                               "then open ~/PhoneFarm/WebDriverAgent/WebDriverAgent.xcodeproj, select the WebDriverAgentRunner target, "
+                               "Signing & Capabilities, tick 'Automatically manage signing' and pick your team. Then press Rebuild runner. "
+                               "(Or enter your Team ID in Settings → Apple Team ID.)")
         if r.returncode != 0:
             raise RuntimeError(f"Runner build failed (code {r.returncode}); see {self._log_path}. "
                                "Is the phone plugged in and unlocked, with Developer Mode on?")

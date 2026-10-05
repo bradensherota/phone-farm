@@ -21,7 +21,11 @@ freezes in the background; use Chrome.)
 
 Then, per phone: Developer Mode on (Settings → Privacy & Security), Auto-Lock Never, plug in
 over USB, tap Trust, press **Find phones** in the app. The first connect builds and installs
-the runner for that phone (2-5 min, phone unlocked). If the phone shows "Untrusted Developer",
+the runner for that phone (2-5 min, phone unlocked). On a Mac that has never signed an app,
+Xcode first needs to create a certificate: open `~/PhoneFarm/WebDriverAgent/WebDriverAgent.xcodeproj`,
+select the WebDriverAgentRunner target → Signing & Capabilities → tick "Automatically manage
+signing" → pick your team (Personal Team is fine), then press Rebuild runner on the phone's page.
+If the phone shows "Untrusted Developer",
 trust it under Settings → General → VPN & Device Management and press Connect. Then on the
 phone's page add your accounts, and in Photos make a **Farm Queue** album for the clips you
 plan to post. Plan the week in the planner, press **Run day** in the morning.

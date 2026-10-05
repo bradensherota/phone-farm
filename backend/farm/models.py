@@ -75,6 +75,7 @@ class Device(Base):
     gap_min_s: Mapped[int] = mapped_column(Integer, default=0)  # seconds between actions: none by default, back to back
     gap_max_s: Mapped[int] = mapped_column(Integer, default=0)
     paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    parked: Mapped[bool] = mapped_column(Boolean, default=False)  # runner stopped by hand (Disconnect); nothing restarts it until Connect / a job
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it
     queue_album: Mapped[str] = mapped_column(String, default="Farm Queue")  # album the app fills with scheduled items and empties after posting
@@ -150,6 +151,9 @@ class Job(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     screenshot_path: Mapped[str] = mapped_column(String, default="")
     group_key: Mapped[str] = mapped_column(String, default="")  # "allstories:<origin account id>:<date>" for fan-out stories
+    group_scope: Mapped[str] = mapped_column(String, default="")  # "" | "phone" | "all" (every Instagram account on every phone)
+    # for a copy on another phone: the origin's media, matched on that phone by capture time
+    origin_media_id: Mapped[int | None] = mapped_column(ForeignKey("media.id", ondelete="SET NULL"), nullable=True)
     last_stage: Mapped[str] = mapped_column(String, default="")  # last stage that passed (open/pick/compose/post)
     failed_stage: Mapped[str] = mapped_column(String, default="")  # stage that broke on the last attempt
     run_stage: Mapped[str] = mapped_column(String, default="")  # manual request: which stage
@@ -160,7 +164,7 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     account: Mapped[Account] = relationship(back_populates="jobs")
-    media: Mapped[MediaItem | None] = relationship()
+    media: Mapped[MediaItem | None] = relationship(foreign_keys=[media_id])
     logs: Mapped[list[JobLog]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="JobLog.id"
     )
@@ -204,10 +208,11 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sim_failure_rate": "0.0",  # 0..1, inject failures to test retry/alerts
     "max_attempts": "2",
     "dry_run": "false",  # true = flows stop right before the final Post/Share button
-    "default_link_instagram": "https://bouncy.ai/brad",  # story link a new Instagram account gets when none is given
-    "default_link_tiktok": "https://onlybrad.party",  # same for TikTok
+    "default_link_instagram": "",  # story link a new Instagram account gets when none is given (set yours in Settings)
+    "default_link_tiktok": "",  # same for TikTok
     "auto_start": "false",  # true = a day's queue starts by itself at its start time; false = you press "Start today"
     "tiktok_stories": "false",  # false = TikTok stories can't be planned and never run (link stickers are broken on the 17)
     "sleep_after_queue": "false",  # true = lock the phone when its day's queue is done (the runner has died twice while locked; keep off until that's solved)
     "queue_auto": "false",  # true = the app fills/empties the queue album itself; false = you manage the album on the phone
+    "disconnect_after_queue": "true",  # true = stop the phone's runner (the "Automation Running" overlay) when its day's queue is done
 }

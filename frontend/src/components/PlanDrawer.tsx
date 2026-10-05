@@ -17,7 +17,9 @@ interface Props {
 interface Draft {
   enabled: boolean;
   allAccounts?: boolean;
+  allPhones?: boolean; // every Instagram account on every phone
   mirroredFrom?: number | null; // set when this story was created by another account's "all accounts" story
+  mirroredLabel?: string; // "@handle" or "@handle (iPhone 17 Pro Max)" for the account it was set from
   jobId?: number;
   status?: Job["status"];
   media: Media | null;
@@ -35,7 +37,9 @@ function draftFrom(meta: ActionMeta, account: Account, job?: Job): Draft {
       enabled: true, jobId: job.id, status: job.status, media: job.media, caption: job.caption,
       link: job.link, link_text: job.link_text, run_at: toLocalInput(job.run_at), job,
       allAccounts: origin !== null && origin === account.id,
+      allPhones: origin !== null && origin === account.id && job.group_scope === "all",
       mirroredFrom: origin !== null && origin !== account.id ? origin : null,
+      mirroredLabel: job.group_origin_handle ? `@${job.group_origin_handle}${job.group_origin_device ? ` (${job.group_origin_device})` : ""}` : "",
     };
   }
   return { enabled: false, media: null, caption: "", link: meta.link ? account.story_link : "", link_text: "", run_at: "" };
@@ -77,13 +81,14 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
       if (locked) continue;
       if (d.mirroredFrom) continue; // edited from the origin account
       if (d.enabled) {
-        if (!d.media) { toast(`${a.label} needs media`, "err"); return; }
+        if (!d.media && !(d.jobId && d.job?.origin_media_id)) { toast(`${a.label} needs media`, "err"); return; }
         if (a.link && !d.link) { toast(`${a.label} needs a link`, "err"); return; }
         upserts.push({
-          id: d.jobId, account_id: account.id, action: a.action, media_id: d.media.id,
+          id: d.jobId, account_id: account.id, action: a.action, media_id: d.media ? d.media.id : null,
           caption: d.caption, link: a.link ? d.link : "", link_text: a.link ? d.link_text : "",
           run_date: date, run_at: d.run_at ? new Date(d.run_at).toISOString() : null,
-          all_accounts: !!d.allAccounts,
+          all_accounts: !!d.allAccounts || !!d.allPhones,
+          all_phones: !!d.allPhones,
         });
       } else if (d.jobId) {
         deletes.push(d.jobId);
@@ -123,7 +128,8 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
             if (!d) return null;
             const editableAfterPost = d.status === "done" && !!d.allAccounts;
             const locked = (d.status === "done" && !editableAfterPost) || d.status === "running" || !!d.mirroredFrom;
-            const originHandle = d.mirroredFrom ? (device.accounts.find((x) => x.id === d.mirroredFrom)?.handle || "another account") : "";
+            const originHandle = d.mirroredFrom ? (d.mirroredLabel || (device.accounts.find((x) => x.id === d.mirroredFrom)?.handle ? `@${device.accounts.find((x) => x.id === d.mirroredFrom)!.handle}` : "another account")) : "";
+            const fromOtherPhone = !!d.mirroredFrom && !device.accounts.some((x) => x.id === d.mirroredFrom);
             return (
               <div className="section" key={a.action}>
                 <div className="sec-head">
@@ -135,15 +141,24 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                   {d.job && <button className="btn sm ghost" onClick={() => setDetail(d.job!)}>Details</button>}
                 </div>
                 {d.enabled && d.mirroredFrom && (
-                  <div className="sec-body"><div className="small dim">Set for every account on this phone from <b>@{originHandle}</b>. Edit or remove it there.</div></div>
+                  <div className="sec-body">
+                    <div className="small dim">Set for {fromOtherPhone ? "every phone" : "every account on this phone"} from <b>{originHandle}</b>. Edit or remove it there.</div>
+                    {!d.media && <div className="small" style={{ color: "var(--warn, #e8c547)" }}>No copy of this clip on this phone yet: AirDrop it here, add it to the album, then Sync.</div>}
+                  </div>
                 )}
                 {d.enabled && !d.mirroredFrom && (
                   <div className="sec-body">
                     {editableAfterPost && <div className="small dim">Already posted here. Changes below apply to the accounts that haven't posted this story yet.</div>}
                     {a.link && (
                       <label className="switch" style={{ alignSelf: "flex-start" }}>
-                        <input type="checkbox" checked={!!d.allAccounts} disabled={locked || editableAfterPost} onChange={(e) => upd(a.action, { allAccounts: e.target.checked })} />
+                        <input type="checkbox" checked={!!d.allAccounts || !!d.allPhones} disabled={locked || editableAfterPost || !!d.allPhones} onChange={(e) => upd(a.action, { allAccounts: e.target.checked })} />
                         <span className="small">Post this story on every account on this phone (each with its own link)</span>
+                      </label>
+                    )}
+                    {a.link && account.platform === "instagram" && (
+                      <label className="switch" style={{ alignSelf: "flex-start" }}>
+                        <input type="checkbox" checked={!!d.allPhones} disabled={locked || editableAfterPost} onChange={(e) => upd(a.action, { allPhones: e.target.checked, allAccounts: e.target.checked || !!d.allAccounts })} />
+                        <span className="small">Post this story on every Instagram account on every phone (the same clip is found on each phone by its capture time)</span>
                       </label>
                     )}
                     <div className="media-pick">

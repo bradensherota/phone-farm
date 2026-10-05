@@ -44,6 +44,7 @@ export interface Device {
   gap_min_s: number;
   gap_max_s: number;
   paused: boolean;
+  parked: boolean;
   sort_order: number;
   story_album: string;
   album_sorts: Record<string, { by: "date" | "custom"; ascending: boolean }>;
@@ -82,6 +83,10 @@ export interface Job {
   has_screenshot: boolean;
   group_key: string;
   group_origin_account_id: number | null;
+  group_scope: "" | "phone" | "all";
+  group_origin_handle: string;
+  group_origin_device: string;
+  origin_media_id: number | null;
   last_stage: Stage | "";
   failed_stage: Stage | "";
   started_at: string | null;
@@ -103,6 +108,7 @@ export interface JobIn {
   run_date: string;
   run_at: string | null;
   all_accounts?: boolean;
+  all_phones?: boolean;
 }
 
 export interface JobLog {
@@ -171,6 +177,8 @@ export const api = {
   syncDevice: (id: string, albumsOnly = false) => req<Media[]>(`/devices/${id}/sync${albumsOnly ? "?albums_only=true" : ""}`, { method: "POST" }),
   discoverDevices: () => req<Device[]>("/devices/discover", { method: "POST" }),
   connectDevice: (id: string) => req<Device>(`/devices/${id}/connect`, { method: "POST" }),
+  disconnectDevice: (id: string) => req<Device>(`/devices/${id}/disconnect`, { method: "POST" }),
+  rebuildRunner: (id: string) => req<Device>(`/devices/${id}/rebuild-runner`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
   startToday: () => req<{ device_id: string; name: string; started: number; connected: boolean; note: string }[]>(`/devices/start-today`, { method: "POST" }),
   runDay: (id: string, run_date: string) => req<{ started: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),

@@ -8,7 +8,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, selectinload
 
 from ..db import get_session
-from ..models import ACTIONS, Account, AccountStatus, Action, Device, Job, JobLog, JobStatus, MediaItem
+from ..groups import NO_COPY_MSG, find_twin_media
+from ..models import ACTIONS, Account, AccountStatus, Action, Device, Job, JobLog, JobStatus, MediaItem, Platform
 from ..scheduler import next_run_for
 from ..schemas import JobIn, JobLogOut, JobOut, MediaOut
 from ..state import runner
@@ -29,6 +30,13 @@ def job_out(j: Job, s: Session | None = None) -> JobOut:
             out.group_origin_account_id = int(j.group_key.split(":")[1])
         except (IndexError, ValueError):
             pass
+        if out.group_origin_account_id is not None and out.group_origin_account_id != j.account_id and s is not None:
+            origin = s.get(Account, out.group_origin_account_id)
+            if origin is not None:
+                out.group_origin_handle = origin.handle
+                out.group_origin_device = origin.device.name if origin.device else ""
+    if j.media is None and j.origin_media_id is not None and j.status == JobStatus.scheduled:
+        out.last_error = NO_COPY_MSG
     out.handle = j.account.handle
     out.platform = j.account.platform.value
     out.device_name = j.account.device.name if j.account.device else ""
@@ -125,17 +133,32 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
         # values the mirrored copies take (the edit, even when the origin itself already posted)
         m_media_id = media.id if media else None
         m_caption, m_link, m_link_text = item.caption, item.link, item.link_text
-        # "post this story on every account on this phone": mirror it to the other story-capable accounts
+        # "post this story on every account on this phone" (and, with all_phones, on every
+        # Instagram account of every other phone): mirror it to the other story-capable accounts
         if meta["label"] == "Story":
             key = f"allstories:{account.id}:{item.run_date.isoformat()}"
+            all_phones = bool(item.all_phones) and bool(item.all_accounts)
             if item.all_accounts:
                 job.group_key = key
+                job.group_scope = "all" if all_phones else "phone"
                 s.flush()
                 others = (
                     s.query(Account)
                     .filter(Account.device_id == account.device_id, Account.id != account.id, Account.status == AccountStatus.active)
                     .all()
                 )
+                if all_phones:
+                    others += (
+                        s.query(Account)
+                        .filter(Account.device_id != account.device_id, Account.status == AccountStatus.active,
+                                Account.platform == Platform.instagram)
+                        .all()
+                    )
+                else:
+                    # scope narrowed back to this phone: drop the other phones' unposted copies
+                    for twin in s.query(Job).filter(Job.group_key == key, Job.device_id != account.device_id,
+                                                    Job.status.in_([JobStatus.scheduled, JobStatus.failed])).all():
+                        s.delete(twin)
                 for other in others:
                     o_action = next((a for a, m in ACTIONS.items() if m["platform"] == other.platform and m["label"] == "Story"), None)
                     if o_action is None:
@@ -155,7 +178,16 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                     if twin is None:
                         twin = Job(account_id=other.id, device_id=other.device_id, action=o_action)
                         s.add(twin)
-                    twin.media_id = m_media_id
+                    if other.device_id == account.device_id:
+                        twin.media_id = m_media_id
+                        twin.origin_media_id = None
+                    else:
+                        # another phone: its own copy of the clip, matched by capture time; may
+                        # still be missing (AirDrop + Sync fills it in later)
+                        twin.origin_media_id = m_media_id
+                        found = find_twin_media(s, other.device_id, media) if media is not None else None
+                        twin.media_id = found.id if found is not None else None
+                    twin.group_scope = job.group_scope
                     twin.caption = m_caption
                     twin.link = other.story_link or m_link
                     twin.link_text = m_link_text
@@ -177,7 +209,7 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
     ids = [j.id for j in saved]
     rows = s.query(Job).options(*_LOAD).filter(Job.id.in_(ids)).all()
     by_id = {j.id: j for j in rows}
-    return [job_out(by_id[i]) for i in ids]
+    return [job_out(by_id[i], s) for i in ids]
 
 
 @router.delete("/{job_id}")
@@ -212,7 +244,7 @@ def run_now(job_id: int, s: Session = Depends(get_session)):
     s.commit()
     s.refresh(j)
     runner.kick(j.device_id)
-    return job_out(j)
+    return job_out(j, s)
 
 
 @router.post("/{job_id}/run-stage", response_model=JobOut)
@@ -252,7 +284,7 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
     s.refresh(j)
     if not runner.run_manual(j.device_id, j.id, then_continue=(mode == "from")):
         raise HTTPException(409, "phone is busy with another job")
-    return job_out(j)
+    return job_out(j, s)
 
 
 @router.post("/{job_id}/cancel", response_model=JobOut)
@@ -265,7 +297,7 @@ def cancel(job_id: int, s: Session = Depends(get_session)):
     j.status = JobStatus.cancelled
     s.commit()
     s.refresh(j)
-    return job_out(j)
+    return job_out(j, s)
 
 
 @router.get("/{job_id}/logs", response_model=list[JobLogOut])

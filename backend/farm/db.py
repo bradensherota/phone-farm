@@ -50,6 +50,9 @@ _ADDED_COLUMNS = [
     ("jobs", "run_stage", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "run_mode", "VARCHAR NOT NULL DEFAULT ''"),
     ("devices", "album_sorts", "TEXT NOT NULL DEFAULT '{}'"),
+    ("jobs", "group_scope", "VARCHAR NOT NULL DEFAULT ''"),
+    ("jobs", "origin_media_id", "INTEGER"),
+    ("devices", "parked", "BOOLEAN NOT NULL DEFAULT 0"),
 ]
 
 

@@ -77,6 +77,7 @@ class DeviceOut(ORM):
     gap_min_s: int
     gap_max_s: int
     paused: bool
+    parked: bool = False
     sort_order: int
     story_album: str = "Stories"
     queue_album: str = "Farm Queue"
@@ -138,6 +139,10 @@ class JobOut(ORM):
     has_screenshot: bool = False
     group_key: str = ""
     group_origin_account_id: int | None = None
+    group_scope: str = ""
+    group_origin_handle: str = ""
+    group_origin_device: str = ""
+    origin_media_id: int | None = None
     last_stage: str = ""
     failed_stage: str = ""
     started_at: datetime | None
@@ -159,6 +164,7 @@ class JobIn(BaseModel):
     run_date: date
     run_at: datetime | None = None
     all_accounts: bool = False  # stories only: fan out to every story-capable account on the phone
+    all_phones: bool = False  # stories only: also every Instagram account on every other phone
 
 
 class JobLogOut(ORM):

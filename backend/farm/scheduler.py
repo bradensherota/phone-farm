@@ -232,6 +232,7 @@ class Runner:
 
     # ---- per-device queue -----------------------------------------------
     async def _device_worker(self, device_id: str) -> None:
+        drained = False  # the queue ran out of jobs (not paused, not stopped)
         try:
             first = True
             while not self._stopping:
@@ -243,6 +244,7 @@ class Runner:
                         return
                     jobs = due_jobs(s, device, datetime.now())
                     if not jobs:
+                        drained = not first
                         return
                     job_id = jobs[0].id
                     gap_min, gap_max = device.gap_min_s, device.gap_max_s
@@ -270,6 +272,13 @@ class Runner:
                     await asyncio.to_thread(drv.sleep)
                 except Exception:
                     pass
+            # ...and stop the runner (the on-screen "Automation Running" overlay) if wanted
+            if drained and drv is not None and drv.kind != "sim" and settings_mod.as_bool(settings_mod.get("disconnect_after_queue", "true")):
+                log.info("%s: day's queue done; disconnecting the runner", device_id)
+                try:
+                    await asyncio.to_thread(self.manager.park, device_id)
+                except Exception:
+                    log.exception("disconnect after queue failed")
 
     # ---- one job ---------------------------------------------------------
     def _execute(self, device_id: str, job_id: int) -> None:
@@ -298,6 +307,11 @@ class Runner:
                 job.last_stage = ""
             job.run_stage, job.run_mode = "", ""
             from_start = not stage_only and not stage_from
+        # a phone disconnected by hand is connected again when a job needs it
+        if drv is not None and drv.kind != "sim" and self.manager.is_parked(device_id):
+            self.manager.set_parked(device_id, False)
+            with session_scope() as s:
+                s.add(JobLog(job_id=job_id, level="info", message="Connecting the phone's runner (it was disconnected)"))
         # the runner must be up and steady before anything else; a job never spends an attempt
         # on a runner that is down or still coming back
         if drv is not None and drv.kind != "sim" and not self._runner_ready(device_id, job_id, drv):
@@ -305,6 +319,8 @@ class Runner:
             return
         if drv is not None and hasattr(drv, "wake") and drv.is_connected():
             drv.wake()  # wake and unlock before anything touches the screen
+        if not self._ensure_copy_present(device_id, job_id):
+            return
         auto_album = settings_mod.as_bool(settings_mod.get("queue_auto", "false"))
         if auto_album and (from_start or stage_only == "open" or stage_from == "open"):
             self._ensure_queued(device_id, job_id)
@@ -373,6 +389,7 @@ class Runner:
                     # oldest-first grids (TikTok): places before the newest item, 0 = newest
                     "album_from_end": album_index,
                     "dry_run": settings_mod.as_bool(settings_mod.get("dry_run", "false")),
+                    "last_stage": job.last_stage or "",  # how far an earlier attempt of this job got
                     "stage_only": stage_only or None,
                     "stage_from": stage_from or None,
                 },
@@ -412,6 +429,30 @@ class Runner:
                      stage=stage_now["name"], partial=result.partial, manual=bool(manual) or not getattr(result, "retry", True))
         if result.ok and not result.partial and auto_album:
             self._release_after_post(device_id, job_id)
+
+    def _ensure_copy_present(self, device_id: str, job_id: int) -> bool:
+        """A story copied to this phone from another phone's plan needs this phone's own copy of
+        the clip. Try once more to find it (a sync matches it by capture time); if it still isn't
+        there the job fails without retrying, until a later Sync finds the clip and re-arms it."""
+        from .groups import NO_COPY_MSG
+        with session_scope() as s:
+            job = s.get(Job, job_id)
+            if job is None or job.media_id is not None or job.origin_media_id is None:
+                return True
+        drv = self.manager.driver(device_id)
+        if drv is not None and drv.is_connected():
+            with session_scope() as s:
+                s.add(JobLog(job_id=job_id, level="info", message="Looking for this phone's copy of the clip (syncing the albums)"))
+            try:
+                self.manager.sync_media(device_id, albums_only=True)  # fills the copy in when it's there
+            except Exception as e:
+                log.warning("%s: sync before story copy failed: %s", device_id, e)
+        with session_scope() as s:
+            job = s.get(Job, job_id)
+            if job is not None and job.media_id is not None:
+                return True
+        self._finish(job_id, ok=False, message=NO_COPY_MSG, shot=None, attempt=0, stage="open", manual=True)
+        return False
 
     def _refresh_album_membership(self, device_id: str, job_id: int) -> None:
         """You put items into the album on the phone yourself; make sure the app's copy of the

@@ -96,13 +96,49 @@ class IOSDriver(Driver):
         self._meta_cache: dict[str, dict] = {}
 
     # ---- lifecycle -------------------------------------------------------
-    def connect(self) -> None:
+    # xcodebuild output that means the runner's signature is gone (free Apple ID: 7 days) or this
+    # phone isn't in its provisioning profile yet: a rebuild fixes both
+    _REBUILD_SIGNS = ("expired", "could not be verified", "no longer valid", "provisioning profile",
+                      "0xe800", "failed to install", "doesn't include", "no profiles", "not registered",
+                      "unable to install", "not eligible", "invalid code signature", "invalid signature")
+
+    def _log_tail(self, n: int = 400) -> str:
+        try:
+            with open(self._log_path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 200_000))
+                return "\n".join(f.read().decode("utf-8", "replace").splitlines()[-n:])
+        except Exception:
+            return ""
+
+    def rebuild_runner(self) -> None:
+        """Build and install the runner for this phone with the Apple ID Xcode is signed into
+        (tools/wda-build.sh). Phone must be plugged in and unlocked. Takes 2-5 minutes."""
+        script = config.ROOT / "tools" / "wda-build.sh"
+        log.info("%s: building the runner (%s)", self.name, script)
+        with open(self._log_path, "ab") as logf:
+            logf.write(b"\n==== rebuilding the runner ====\n")
+            r = subprocess.run(["/bin/zsh", str(script), self.device_id], stdout=logf, stderr=logf, timeout=1500)
+        if r.returncode != 0:
+            raise RuntimeError(f"Runner build failed (code {r.returncode}); see {self._log_path}. "
+                               "Is Xcode signed into an Apple ID (Xcode → Settings → Accounts) and the phone unlocked?")
+        self._rebuilt_at = time.time()
+        log.info("%s: runner built", self.name)
+
+    def connect(self, _retry_build: bool = True) -> None:
         with self._lock:
             if self._status_ok():
                 return
             xctestrun = find_xctestrun()
             if not xctestrun:
-                raise RuntimeError("WebDriverAgent is not built. See README: build it once into ~/PhoneFarm/wda-build.")
+                if not _retry_build:
+                    raise RuntimeError("WebDriverAgent is not built (tools/wda-build.sh <UDID>)")
+                log.info("%s: no runner built yet; building it now (first time, 2-5 min)", self.name)
+                self.rebuild_runner()
+                xctestrun = find_xctestrun()
+                if not xctestrun:
+                    raise RuntimeError("Runner build produced nothing; see the phone's log")
             self._stop_processes()
             logf = open(self._log_path, "ab")
             self._forward = subprocess.Popen(
@@ -121,9 +157,19 @@ class IOSDriver(Driver):
                     self._new_standby_session()
                     return
                 if self._xcodebuild.poll() is not None:
+                    tail = self._log_tail().lower()
+                    recently = time.time() - getattr(self, "_rebuilt_at", 0) < 600
+                    if _retry_build and not recently and any(sign in tail for sign in self._REBUILD_SIGNS):
+                        log.warning("%s: runner signature expired or phone not registered; rebuilding the runner", self.name)
+                        self._stop_processes()
+                        self.rebuild_runner()
+                        break
                     raise RuntimeError(f"xcodebuild exited early (see {self._log_path})")
                 time.sleep(2)
-            raise RuntimeError("WebDriverAgent did not come up within 90s")
+            else:
+                raise RuntimeError("WebDriverAgent did not come up within 90s")
+        # only reached after a rebuild: start the fresh runner (no second rebuild)
+        self.connect(_retry_build=False)
 
     def disconnect(self) -> None:
         with self._lock:

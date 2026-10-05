@@ -85,9 +85,10 @@ export function Pill({ kind, children, title }: { kind?: string; children: React
   return <span className={`pill ${kind || ""}`} title={title}>{children}</span>;
 }
 
-export function StatusDot({ connected, busy }: { connected: boolean; busy?: boolean }) {
-  const cls = !connected ? "off" : busy ? "busy" : "on";
-  return <span className={`dot ${cls}`} />;
+export function StatusDot({ connected, busy, parked }: { connected: boolean; busy?: boolean; parked?: boolean }) {
+  const cls = !connected ? (parked ? "parked" : "off") : busy ? "busy" : "on";
+  const title = !connected ? (parked ? "Disconnected by you. Press Connect, or run a job." : "Runner not connected") : busy ? "Posting" : "Connected";
+  return <span className={`dot ${cls}`} title={title} />;
 }
 
 export function MediaThumb({ media, className }: { media: Media | null | undefined; className?: string }) {

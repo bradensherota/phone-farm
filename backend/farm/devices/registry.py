@@ -115,8 +115,33 @@ class DeviceManager:
                     drv = IOSDriver(dev.id, dev.name, wda_port=WDA_BASE_PORT + 1 + dev.sort_order)
                     drv.passcode = dev.passcode or ""
                 self._drivers[dev.id] = drv
-            if connect:
+            if connect and not dev.parked:
                 self.connect_async(dev.id)
+
+    # ---- parked: runner stopped by hand ------------------------------------
+    def is_parked(self, device_id: str) -> bool:
+        with session_scope() as s:
+            d = s.get(Device, device_id)
+            return bool(d is not None and d.parked)
+
+    def set_parked(self, device_id: str, parked: bool) -> None:
+        with session_scope() as s:
+            d = s.get(Device, device_id)
+            if d is not None:
+                d.parked = parked
+
+    def park(self, device_id: str) -> None:
+        """Disconnect: stop the runner on the phone (the "Automation Running" overlay goes with
+        it) and remember not to start it again until Connect is pressed or a job needs it."""
+        self.set_parked(device_id, True)
+        drv = self._drivers.get(device_id)
+        if drv is not None and hasattr(drv, "disconnect"):
+            try:
+                drv.disconnect()
+            except Exception as e:
+                log.warning("%s: disconnect failed: %s", device_id, e)
+        self.last_error.pop(device_id, None)
+        log.info("%s: runner stopped (disconnected)", getattr(drv, "name", device_id))
 
     def connect_async(self, device_id: str) -> None:
         """Start a phone's runner in the background (takes up to ~90s for real phones)."""
@@ -156,6 +181,11 @@ class DeviceManager:
                 for did, drv in list(self._drivers.items()):
                     if drv.kind != "ios" or did in self._connecting or did in self.busy_devices():
                         continue  # never restart a runner that is mid-job; a long gesture can block its HTTP briefly
+                    if self.is_parked(did):
+                        was_up[did] = False
+                        misses[did] = 0
+                        next_retry.pop(did, None)
+                        continue  # stopped by hand: stays stopped until Connect or a job
                     try:
                         up = drv.is_connected()
                     except Exception:
@@ -222,6 +252,18 @@ class DeviceManager:
         now = datetime.now()
         thumb_dir = THUMB_DIR / device_id
         thumb_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            return self._sync_media_items(drv, device_id, items, now, thumb_dir, albums_only)
+        finally:
+            # story copies for this phone that were waiting for their clip: fill them in now
+            try:
+                from ..groups import resolve_pending
+                with session_scope() as s:
+                    resolve_pending(s, device_id)
+            except Exception as e:
+                log.warning("%s: could not resolve pending story copies: %s", device_id, e)
+
+    def _sync_media_items(self, drv, device_id: str, items, now, thumb_dir, albums_only: bool) -> int:
 
         # Pass 1: mirror the listing. Short transaction, no device I/O inside it.
         todo: list[tuple[int, str, bool, bool]] = []  # (row id, filename, needs_thumb, needs_probe)

@@ -89,8 +89,9 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
     <div className="page-head">
       <div>
         <div className="row">
-          <StatusDot connected={device.connected} busy={device.busy} />
+          <StatusDot connected={device.connected} busy={device.busy} parked={device.parked} />
           <h1>{device.name}</h1>
+          {device.parked && !device.connected && !device.connecting && <Pill kind="paused" title="Runner stopped by you. Press Connect, or run a job.">disconnected</Pill>}
           {device.paused && <Pill kind="paused">paused</Pill>}
           {device.connecting && <Pill kind="running">connecting…</Pill>}
         </div>
@@ -99,7 +100,13 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
       </div>
       <div className="row">
         {device.kind === "ios" && !device.connected && (
-          <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button></div>
+          <div className="field"><label>&nbsp;</label><div className="row">
+            <button className="btn primary" disabled={device.connecting} onClick={reconnect}>{device.connecting ? "Connecting…" : "Connect"}</button>
+            <button className="btn sm ghost" disabled={device.connecting || device.busy} title="Build and install the runner on this phone again (2-5 min). Needed when its signature expired (free Apple ID: every 7 days), for a new phone, or a new Mac. The app normally does this by itself." onClick={async () => { try { await api.rebuildRunner(device.id); toast("Building the runner… 2-5 minutes. Keep the phone plugged in and unlocked."); onChanged(); } catch (e: any) { toast(e.message, "err"); } }}>Rebuild runner</button>
+          </div></div>
+        )}
+        {device.kind === "ios" && (device.connected || device.connecting) && (
+          <div className="field"><label>Runner</label><button className="btn sm ghost" disabled={device.busy || device.connecting} title="Stop the runner on the phone: the Automation Running overlay goes away. Connect, Start today or Run day bring it back." onClick={async () => { try { await api.disconnectDevice(device.id); toast("Runner stopped; the overlay on the phone clears in a few seconds"); onChanged(); } catch (e: any) { toast(e.message, "err"); } }}>{device.connecting ? "Connecting…" : "Disconnect"}</button></div>
         )}
         {device.kind === "ios" && device.connected && (
           <div className="field"><label>Screen</label><div className="row">

@@ -70,8 +70,55 @@ def connect_device(device_id: str, s: Session = Depends(get_session)):
         raise HTTPException(404, "device not found")
     if manager.driver(device_id) is None:
         manager.load(connect=False)
+    d.parked = False
+    s.commit()
     manager.last_error.pop(device_id, None)
     manager.connect_async(device_id)
+    return device_out(s, d)
+
+
+@router.post("/{device_id}/rebuild-runner", response_model=DeviceOut)
+def rebuild_runner(device_id: str, s: Session = Depends(get_session)):
+    """Build and install the runner for this phone again (signature expired, new phone, new Mac).
+    Runs in the background; the phone connects when it's done."""
+    d = s.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+    if d.id in runner.busy:
+        raise HTTPException(409, "the phone is busy; press Stop first")
+    drv = manager.driver(device_id)
+    if drv is None or not hasattr(drv, "rebuild_runner"):
+        raise HTTPException(400, "not a real phone")
+    import threading
+
+    def work():
+        try:
+            manager.last_error[device_id] = "Building the runner… 2-5 minutes (phone plugged in and unlocked)"
+            drv.disconnect()
+            drv.rebuild_runner()
+            manager.last_error.pop(device_id, None)
+            manager.set_parked(device_id, False)
+            manager.connect_async(device_id)
+        except Exception as e:
+            manager.last_error[device_id] = str(e)
+    threading.Thread(target=work, name=f"rebuild-{device_id}", daemon=True).start()
+    d.parked = False
+    s.commit()
+    return device_out(s, d)
+
+
+@router.post("/{device_id}/disconnect", response_model=DeviceOut)
+def disconnect_device(device_id: str, s: Session = Depends(get_session)):
+    """Stop the phone's runner (clears the "Automation Running" overlay). Nothing starts it again
+    until Connect is pressed or a job on this phone needs it."""
+    d = s.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "device not found")
+    if d.id in runner.busy:
+        raise HTTPException(409, "the phone is busy; press Stop first")
+    s.expunge(d)
+    manager.park(device_id)
+    d = s.get(Device, device_id)
     return device_out(s, d)
 
 
@@ -83,6 +130,10 @@ def start_today(s: Session = Depends(get_session)):
     today = date.today()
     now = datetime.now()
     out = []
+    try:
+        plugged = set(manager.discover())
+    except Exception:
+        plugged = set()
     for d in s.query(Device).filter(Device.kind != "sim").all():
         jobs = (
             s.query(Job)
@@ -95,6 +146,9 @@ def start_today(s: Session = Depends(get_session)):
         if not jobs:
             out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": connected, "note": "nothing planned today"})
             continue
+        if not connected and d.parked and d.id in plugged:
+            # disconnected by hand but plugged in: the first job connects it again
+            connected = True
         if not connected:
             out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": False, "note": "not connected; plug it in and unlock it, then press again"})
             continue
@@ -286,8 +340,12 @@ def patch_device(device_id: str, body: DevicePatch, s: Session = Depends(get_ses
 
 @router.post("/{device_id}/sync", response_model=list[MediaOut])
 def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(get_session)):
-    if s.get(Device, device_id) is None:
+    d = s.get(Device, device_id)
+    if d is None:
         raise HTTPException(404, "device not found")
+    drv = manager.driver(device_id)
+    if d.parked and (drv is None or not drv.is_connected()):
+        raise HTTPException(409, "The phone is disconnected; press Connect first")
     manager.sync_media(device_id, albums_only=albums_only)
     return list_media(device_id, s)
 

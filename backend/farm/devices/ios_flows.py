@@ -82,6 +82,18 @@ class Phone:
         self.apply_settings()
         time.sleep(0.8)
 
+    def relaunch(self, bundle_id: str) -> None:
+        """Last resort when the app is wedged on a screen nothing else can leave: quit it and
+        start it again. Only used when no story editor is open (that would lose a sticker)."""
+        self.log("warn", f"Relaunch {bundle_id}")
+        assert self.s is not None, "open() an app first"
+        for path, pause in (("terminate", 1.5), ("launch", 4.0)):
+            try:
+                self.c.http.post(f"/session/{self.s.session_id}/wda/apps/{path}", {"bundleId": bundle_id})
+            except Exception as e:
+                self.log("warn", f"{path} failed: {e}")
+            time.sleep(pause)
+
     def home(self) -> None:
         try:
             self.c.home()
@@ -247,25 +259,51 @@ class Phone:
 
 # ---- Instagram building blocks ---------------------------------------------------
 
+_KEEP_EDITING = "type == 'XCUIElementTypeButton' AND (label == 'Keep editing' OR label == 'Keep Editing')"
+_STORY_EDITOR_MSG = "A story editor is open on the phone; share or close it by hand, then run this again"
+
+
+def ig_story_editor_open(p: Phone) -> bool:
+    return p.exists(name="share-to-your-story", timeout=0.8) or p.exists(name="discard-story-preview", timeout=0.5)
+
+
 def ig_reset(p: Phone) -> None:
-    """Get Instagram back to a tab-bar screen if a previous run left a composer or gallery open."""
-    for _ in range(3):
+    """Get Instagram back to a tab-bar screen if a previous run left a composer or gallery open.
+
+    A story editor is never closed: its X asks "Discard media?" when a sticker is on it, and
+    discarding throws away a link someone set up. If that sheet is up, "Keep editing" is pressed
+    and the job gives up so the next one can run. The reel gallery is closed after clearing any
+    selected clip, so Instagram has nothing to ask about."""
+    for _ in range(4):
         if p.exists(name="profile-tab", timeout=1.5):
             return
-        if p.tap_if(name="discard-story-preview", what="Discard leftover story", timeout=1):
-            p.tap_if(predicate="label CONTAINS 'Discard'", what="Confirm discard", timeout=3)
-            continue
+        if p.tap_if(predicate=_KEEP_EDITING, what="Keep editing (never discard a story)", timeout=0.5):
+            raise FlowGiveUp(_STORY_EDITOR_MSG)
+        if ig_story_editor_open(p):
+            raise FlowGiveUp(_STORY_EDITOR_MSG)
         if p.tap_if(name="discard-reel-preview", what="Discard leftover reel", timeout=1):
             p.tap_if(name="camera-discard-draft", what="Start over", timeout=3)
             continue
-        if p.tap_if(name="gallery-close-button", what="Close leftover gallery", timeout=1):
+        if p.exists(name="gallery-close-button", timeout=1):
+            ms = p.el(name="multi-select").wait(timeout=1, raise_error=False)
+            if ms and (ms.label or "").lower() == "cancel":
+                p.log("info", "Clear the gallery's selected clip")
+                ms.tap()
+                time.sleep(1.0)
+            p.tap(name="gallery-close-button", what="Close leftover gallery", timeout=3)
+            if p.tap_if(predicate=_KEEP_EDITING, what="Keep editing", timeout=0.8):
+                raise FlowGiveUp("Instagram asked about discarding when closing the gallery; sort it out by hand, then run again")
             continue
         if p.tap_if(name="BackButton", what="Back", timeout=1):
             continue
         p.tap_if(name="Cancel", what="Cancel", timeout=1)
     if not p.exists(name="profile-tab", timeout=2):
-        p.log("warn", "Instagram isn't on a tab screen; relaunching")
-        p.open(BUNDLES["instagram"])
+        if ig_story_editor_open(p):
+            raise FlowGiveUp(_STORY_EDITOR_MSG)
+        p.log("warn", "Instagram isn't on a tab screen and nothing closes it; relaunching Instagram")
+        p.relaunch(BUNDLES["instagram"])
+        if not p.exists(name="profile-tab", timeout=10):
+            raise FlowError("Instagram did not come back to a tab screen after relaunch")
 
 
 def ig_current_handle(p: Phone) -> str:
@@ -542,52 +580,79 @@ def _ig_pick_cell(p: Phone, spec: ActionSpec, index: int, total: int) -> None:
 
 
 def _tap_gallery_cell(p: Phone, target, refind) -> None:
-    """Tap a gallery cell where a finger would land. A cell in the bottom row sits under
-    Instagram's mode bar and an element tap there does nothing, so bring it fully into view
-    and tap its centre by coordinates; then confirm the gallery actually opened the item."""
+    """Tap a gallery cell where a finger would land, inside the band between the gallery header
+    and Instagram's bottom mode bar. Tap first; only when the tap doesn't open the item is the
+    grid nudged, gently, and the tap tried again. If the tap merely selects the clip (the
+    multi-select tray), its Next button is pressed instead."""
     H = p.window_height()
+    TOP, BOTTOM = 130, H - 120
+    # the header is taller on newer Instagram builds (Edits / Drafts / Templates row): measure it
+    hdr = p.el(predicate="label BEGINSWITH 'Gallery Selection'").wait(timeout=1.5, raise_error=False)
+    if hdr:
+        try:
+            hr = hdr.bounds
+            TOP = max(TOP, int(hr.y + hr.height) + 6)
+        except Exception:
+            pass
 
-    def centre(e):
-        r = e.bounds
-        return r, int(r.x + r.width / 2), int(r.y + r.height / 2)
+    def bounds(e):
+        try:
+            return e.bounds
+        except Exception:  # stale: the grid re-laid itself out
+            return None
 
-    TOP, BOTTOM = 130, H - 120  # the gallery header and Instagram's mode bar cover these bands
+    def find_again():
+        for _ in range(3):
+            e = refind()
+            if e:
+                r = bounds(e)
+                if r:
+                    return e, r
+            time.sleep(0.7)
+        return None, None
 
-    def tap_point(e):
-        """Somewhere inside the cell that is also clear of the header and the mode bar."""
-        r = e.bounds
+    def tap_point(r):
         x = int(r.x + r.width / 2)
         lo, hi = r.y + 24, r.y + r.height - 24
         y = int(min(max(r.y + r.height / 2, TOP + 8), BOTTOM - 8))
         y = int(min(max(y, lo), hi))
-        return r, x, y
+        return x, y
 
-    def settle(target, direction: str):
-        """A gentle nudge: 'down' brings a cell out from under the header, 'up' out from under
-        the mode bar. Small moves so it doesn't swing to the other edge."""
-        p.log("info", "Item is under the top edge; scrolling back up a little" if direction == "down" else "Item is under the bottom bar; scrolling down a little")
-        p.flick(direction, strength=0.12)
-        time.sleep(0.8)
-        return refind() or target
+    def opened() -> bool:
+        return (p.exists(name="sundial-right-chevron-next-button", timeout=2) or p.exists(name="story-trimmer-done-button", timeout=0.5)
+                or p.exists(name="share-to-your-story", timeout=0.5) or not p.exists(name="gallery-header-title", timeout=1))
 
-    # tap first; only when the tap doesn't open the item is the grid moved
+    NEXT = "type == 'XCUIElementTypeButton' AND label == 'Next'"
+    r = bounds(target)
     for attempt in range(4):
-        r, x, y = tap_point(target)
+        if r is None:
+            target, r = find_again()
+            if r is None:
+                raise FlowError("Lost the planned item in the gallery (it moved out of view)")
+        x, y = tap_point(r)
         p.log("info", f"Tap item at ({x},{y})" if attempt == 0 else f"Tapping again ({attempt + 1}/4) at ({x},{y})")
         p.s.tap(x, y)
         time.sleep(2.0)
-        opened = (p.exists(name="sundial-right-chevron-next-button", timeout=2) or p.exists(name="story-trimmer-done-button", timeout=0.5)
-                  or p.exists(name="share-to-your-story", timeout=0.5) or not p.exists(name="gallery-header-title", timeout=1))
-        if opened:
+        if opened():
             return
-        target = refind() or target
-        r = target.bounds
+        # the tap selected the clip into the tray instead of opening it: Next opens it
+        if p.exists(name="gallery-header-title", timeout=0.5) and p.exists(predicate=NEXT, timeout=0.5):
+            p.tap(predicate=NEXT, what="Next (selected clip)", timeout=3, pause=2.5)
+            if opened():
+                return
+        target, r = find_again()
+        if r is None:
+            raise FlowError("Lost the planned item in the gallery after tapping it")
         if r.y < TOP:
-            target = settle(target, "down")
+            direction = "down"
         elif r.y + r.height > BOTTOM:
-            target = settle(target, "up")
+            direction = "up"
         else:
-            target = settle(target, "down" if r.y + r.height / 2 < H / 2 else "up")
+            direction = "down" if r.y + r.height / 2 < H / 2 else "up"
+        p.log("info", "Item is under the top edge; scrolling back up a little" if direction == "down" else "Item is under the bottom bar; scrolling down a little")
+        p.flick(direction, strength=0.2)
+        time.sleep(0.8)
+        target, r = find_again()
     raise FlowError("Tapped the planned item but Instagram stayed on the gallery")
 
 
@@ -691,12 +756,25 @@ def ig_story(p: Phone, spec: ActionSpec):
     if spec.media_index is None:
         raise FlowError("No media chosen")
 
+    # an earlier attempt of this same job got as far as the editor (runner dropped, Stop, ...):
+    # the editor it left open is this story, so carry on in it instead of discarding it
+    resumable = (spec.extra or {}).get("last_stage") in ("pick", "compose")
+    state = {"resume": False}
+
     def open_():
         p.open(BUNDLES["instagram"])
+        if resumable and (ig_story_editor_open(p) or p.exists(predicate=_KEEP_EDITING, timeout=0.5)):
+            p.tap_if(predicate=_KEEP_EDITING, what="Keep editing", timeout=0.5)
+            p.log("info", "The story editor from the earlier attempt is still open; continuing in it")
+            state["resume"] = True
+            return
         ig_reset(p)
         ig_ensure_account(p, spec.handle)
 
     def pick():
+        if state["resume"] and p.exists(name="share-to-your-story", timeout=2):
+            p.log("info", "Already on the story editor")
+            return
         if not p.exists(name="gallery-header-title", timeout=1):
             ig_open_story_gallery(p)
         ig_pick_gallery_item(p, spec)
@@ -708,6 +786,9 @@ def ig_story(p: Phone, spec: ActionSpec):
         if not p.exists(name="share-to-your-story", timeout=3):
             raise FlowError("Not on the story editor (run the 'pick' stage first)")
         if spec.link:
+            if p.exists(predicate="label BEGINSWITH 'Link Sticker'", timeout=1.5):
+                p.log("info", "Link sticker is already on the story")
+                return
             ig_add_link_sticker(p, spec.link, spec.link_text)
 
     def post():
@@ -813,8 +894,10 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
             p.tap(name="creation-reel", what="Reel")
             p.wait(name="gallery-header-title", what="reel gallery")
         ig_dismiss_draft_prompt(p)
-        ms = p.el(name="multi-select").wait(timeout=3, raise_error=False)
-        if ms and (ms.label or "").lower() == "cancel":
+        for _ in range(2):
+            ms = p.el(name="multi-select").wait(timeout=3, raise_error=False)
+            if not (ms and (ms.label or "").lower() == "cancel"):
+                break
             p.log("info", "Turn off multi-select")
             ms.tap()
             time.sleep(1)
@@ -843,12 +926,11 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
             p.log("info", "DRY RUN: stopping before 'Share'")
             return True, "Dry run reached Share"
         p.tap(name="share-sheet-share-button", what="Share", timeout=20, pause=0.5)
-        # Posted = the share screen is gone AND a tab bar is back. A pop-up (the trial reel
-        # notice, for one) can swallow the tap and hide the button for a moment, so a still
-        # visible share screen just gets Share pressed again.
+        # Posted = the share screen is gone; Instagram uploads in the background and the next
+        # job starts right away. A pop-up (the trial reel notice, for one) can swallow the tap,
+        # so a share screen that is still up gets Share pressed again.
         def posted() -> bool:
-            gone = not p.exists(name="share-sheet-share-button", timeout=0.5)
-            return gone and (p.exists(name="mainfeed-tab", timeout=0.5) or p.exists(name="profile-tab", timeout=0.5))
+            return not p.exists(name="share-sheet-share-button", timeout=0.5)
         for attempt in range(4):
             for _ in range(8):
                 if posted():

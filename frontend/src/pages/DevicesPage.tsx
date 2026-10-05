@@ -61,12 +61,18 @@ export default function DevicesPage() {
                 <PhoneScreen deviceId={d.id} connected={d.connected} intervalMs={2500} />
                 <div>
                   <div className="row">
-                    <StatusDot connected={d.connected} busy={d.busy} />
+                    <StatusDot connected={d.connected} busy={d.busy} parked={d.parked} />
                     <h3>{d.name}</h3>
                     {d.paused && <Pill kind="paused">paused</Pill>}
+                    {d.kind === "ios" && (d.connected || d.connecting ? (
+                      <button className="btn sm ghost" disabled={d.busy || d.connecting} title="Stop the runner on the phone (clears the Automation Running overlay). Connect, Start today or Run day bring it back." onClick={async (e) => { e.stopPropagation(); try { await api.disconnectDevice(d.id); toast(`${d.name}: runner stopped`); reload(); } catch (err: any) { toast(err.message, "err"); } }}>{d.connecting ? "Connecting…" : "Disconnect"}</button>
+                    ) : (
+                      <button className="btn sm" title="Start the runner on the phone (plug it in and unlock it first)" onClick={async (e) => { e.stopPropagation(); try { await api.connectDevice(d.id); toast(`${d.name}: starting the runner… up to a minute`); reload(); } catch (err: any) { toast(err.message, "err"); } }}>Connect</button>
+                    ))}
                   </div>
                   <div className="small dim">{d.model} · {d.kind === "sim" ? "simulated" : "USB"}{settings?.auto_start === "true" ? ` · starts ${d.routine_start}` : " · manual start"}</div>
                   {d.connecting && <div className="small" style={{ color: "var(--amber)" }}>Starting runner…</div>}
+                  {d.parked && !d.connected && !d.connecting && <div className="small dim">Disconnected by you · press Connect, or Start today / Run day</div>}
                   {d.error && !d.connecting && <div className="small" style={{ color: "var(--red)" }}>{d.error}</div>}
                   <div className="small dim">{d.media_count} items in camera roll</div>
                   <div className="acct-list">

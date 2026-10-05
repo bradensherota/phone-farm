@@ -4,30 +4,33 @@ Local Mac app that plans a week of posts and stories for multiple iPhones and th
 posts them by driving the real Instagram, TikTok, and X apps on each phone over USB,
 one action at a time, the way a person holding the phone would.
 
-Status: **control plane complete, running against simulated phones.** The real iPhone
-driver is stubbed and gets filled in on the Mac that has Xcode.
+## Setup on a new Mac
 
-## Run it
-
-```bash
-./run.sh
-```
-
-Opens a native window. `./run.sh --server` runs the API only (for UI development with
-`cd frontend && npm run dev`, which proxies `/api` to the server).
-
-### First-time setup on a new Mac
+Everything runs on your Mac; the phones plug in over USB. You need: a Mac with **Xcode**
+(App Store, open it once), **Homebrew**, and an **Apple ID** signed into Xcode (Settings →
+Accounts; a free one is fine, the app re-signs the phone runner by itself every 7 days).
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh    # Python manager, no admin needed
-cd backend && uv sync && cd ..
-cd frontend && npm install && npm run build && cd ..
-./run.sh
+./install.sh
 ```
 
-Requires `ffmpeg` on the PATH for video thumbnails (`brew install ffmpeg`).
+That installs the Python and UI pieces, compiles the OCR helper, and sets the server to run
+whenever you're logged in, at http://localhost:8765. To get a Dock icon, open that address in
+Chrome and use menu ⋮ → Cast, save and share → Install page as app. (Safari's "Add to Dock"
+freezes in the background; use Chrome.)
 
-For real phones, on the Mac with Xcode: `cd backend && uv sync --extra ios`.
+Then, per phone: Developer Mode on (Settings → Privacy & Security), Auto-Lock Never, plug in
+over USB, tap Trust, press **Find phones** in the app. The first connect builds and installs
+the runner for that phone (2-5 min, phone unlocked). If the phone shows "Untrusted Developer",
+trust it under Settings → General → VPN & Device Management and press Connect. Then on the
+phone's page add your accounts, and in Photos make a **Farm Queue** album for the clips you
+plan to post. Plan the week in the planner, press **Run day** in the morning.
+
+Updating: unzip the new version over the folder (keep `data/`), run `./install.sh` again.
+`./uninstall.sh` stops the server; `tools/package.sh` makes a zip to hand to someone else.
+
+For development: `./run.sh --server` runs the API only; `cd frontend && npm run dev` serves
+the UI with hot reload, proxying `/api` to it.
 
 ## What it does
 
@@ -99,7 +102,7 @@ Done once per Mac:
    and selected for the command line: `sudo xcode-select -s /Applications/Xcode.app`.
 2. Build WebDriverAgent **outside iCloud-synced folders** (Desktop/Documents add file
    attributes that make code signing fail with "resource fork, Finder information, or
-   similar detritus"). The app expects it at `~/PhoneFarm`:
+   similar detritus"). The app expects it at `~/PhoneFarm`, and `tools/wda-build.sh <UDID>` runs exactly this:
 
    ```bash
    mkdir -p ~/PhoneFarm && cd ~/PhoneFarm
@@ -120,10 +123,9 @@ Per phone:
 
 1. Developer Mode on (Settings, Privacy & Security), Auto-Lock Never, automatic iOS and
    App Store updates off. Plug in over USB, tap Trust.
-2. First time only, install the runner:
-   `xcrun devicectl device install app --device <UDID> ~/PhoneFarm/wda-build/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app`
-   (a new phone also has to be added to the provisioning profile: rerun the build
-   above once with that phone as the destination).
+2. The app builds and installs the runner for a new phone the first time it connects, and
+   rebuilds it when its signature has expired (`tools/wda-build.sh <UDID>` does the same by
+   hand; "Rebuild runner" on the phone page too). A free Apple ID's signature lasts 7 days.
 3. Launch the app. It finds the phone over USB, starts its runner (one local port per
    phone, 8101 and up), reads the camera roll, and shows the live screen. "Find phones"
    on the Phones page rescans without restarting.

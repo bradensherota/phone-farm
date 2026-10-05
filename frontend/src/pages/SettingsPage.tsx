@@ -4,6 +4,7 @@ import { useToast } from "../components/common";
 
 const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" | "text" }[] = [
   { key: "runner_enabled", label: "Runner enabled", help: "Master switch. Off = nothing posts anywhere.", type: "bool" },
+  { key: "apple_team_id", label: "Apple Team ID", help: "10 characters, used to sign the runner on the phones. Leave blank to use the Apple ID signed into Xcode (Xcode → Settings → Accounts). Find it in Xcode: select that account, the team name is listed; or at developer.apple.com → Membership.", type: "text" },
   { key: "default_link_instagram", label: "Default Instagram story link", help: "Given to a new Instagram account when you don't enter a link. Each account's link can still be changed on its phone page.", type: "text" },
   { key: "default_link_tiktok", label: "Default TikTok story link", help: "Same, for new TikTok accounts.", type: "text" },
   { key: "auto_start", label: "Start days automatically at their time", help: "Off: nothing runs until you press Start today on the Phones page (or Run day / Run now). On: each phone's queue starts by itself at the day's start time.", type: "bool" },

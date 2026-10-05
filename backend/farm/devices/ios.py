@@ -116,13 +116,19 @@ class IOSDriver(Driver):
         """Build and install the runner for this phone with the Apple ID Xcode is signed into
         (tools/wda-build.sh). Phone must be plugged in and unlocked. Takes 2-5 minutes."""
         script = config.ROOT / "tools" / "wda-build.sh"
-        log.info("%s: building the runner (%s)", self.name, script)
+        from .. import settings as settings_mod
+        team = (settings_mod.get("apple_team_id", "") or "").strip()
+        args = ["/bin/zsh", str(script), self.device_id] + ([team] if team else [])
+        log.info("%s: building the runner (%s, team %s)", self.name, script, team or "auto")
         with open(self._log_path, "ab") as logf:
             logf.write(b"\n==== rebuilding the runner ====\n")
-            r = subprocess.run(["/bin/zsh", str(script), self.device_id], stdout=logf, stderr=logf, timeout=1500)
+            r = subprocess.run(args, stdout=logf, stderr=logf, timeout=1500)
+        if r.returncode == 2:
+            raise RuntimeError("No Apple team found on this Mac. Sign an Apple ID into Xcode (Xcode → Settings → Accounts), "
+                               "or enter your Team ID in Settings → Apple Team ID, then press Rebuild runner.")
         if r.returncode != 0:
             raise RuntimeError(f"Runner build failed (code {r.returncode}); see {self._log_path}. "
-                               "Is Xcode signed into an Apple ID (Xcode → Settings → Accounts) and the phone unlocked?")
+                               "Is the phone plugged in and unlocked, with Developer Mode on?")
         self._rebuilt_at = time.time()
         log.info("%s: runner built", self.name)
 

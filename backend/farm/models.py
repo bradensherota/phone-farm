@@ -214,5 +214,6 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "tiktok_stories": "false",  # false = TikTok stories can't be planned and never run (link stickers are broken on the 17)
     "sleep_after_queue": "false",  # true = lock the phone when its day's queue is done (the runner has died twice while locked; keep off until that's solved)
     "queue_auto": "false",  # true = the app fills/empties the queue album itself; false = you manage the album on the phone
-    "disconnect_after_queue": "true",  # true = stop the phone's runner (the "Automation Running" overlay) when its day's queue is done
+    "disconnect_after_queue": "true",
+    "apple_team_id": "",  # 10-character Apple team ID used to sign the phone runner; blank = detect from Xcode's signed-in Apple ID  # true = stop the phone's runner (the "Automation Running" overlay) when its day's queue is done
 }

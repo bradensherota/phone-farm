@@ -17,7 +17,13 @@ if [ ! -d "$SRC/WebDriverAgent.xcodeproj" ]; then
 fi
 TEAM="${2:-${PHONEFARM_TEAM_ID:-}}"
 if [ -z "$TEAM" ]; then
-  TEAM=$(security find-identity -v -p codesigning 2>/dev/null | grep -oE 'Apple Development: [^(]*\([A-Z0-9]{10}\)' | head -1 | grep -oE '[A-Z0-9]{10}\)$' | tr -d ')' || true)
+  # the Team ID is the OU of a valid Apple Development certificate (the id in the certificate's
+  # display name is not always the same thing)
+  NAME=$(security find-identity -v -p codesigning 2>/dev/null | grep -oE '"Apple Development: [^"]*"' | head -1 | tr -d '"' || true)
+  if [ -n "$NAME" ]; then
+    TEAM=$(security find-certificate -c "$NAME" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null \
+      | grep -oE 'OU ?= ?"?[A-Z0-9]{10}' | head -1 | grep -oE '[A-Z0-9]{10}$' || true)
+  fi
 fi
 if [ -z "$TEAM" ]; then
   TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | grep -oE 'teamID = "?[A-Z0-9]{10}' | head -1 | grep -oE '[A-Z0-9]{10}$' || true)

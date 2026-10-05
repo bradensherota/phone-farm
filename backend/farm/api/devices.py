@@ -346,7 +346,7 @@ def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(
     drv = manager.driver(device_id)
     if d.parked and (drv is None or not drv.is_connected()):
         raise HTTPException(409, "The phone is disconnected; press Connect first")
-    manager.sync_media(device_id, albums_only=albums_only)
+    manager.sync_media(device_id, albums_only=albums_only, force=True)  # the button always reads fresh
     return list_media(device_id, s)
 
 

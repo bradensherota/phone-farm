@@ -436,7 +436,12 @@ class IOSDriver(Driver):
         from pymobiledevice3.services.afc import AfcService
 
         async def go():
-            ld = await create_using_usbmux(self.device_id)
+            # the cable first: a phone that is also reachable over Wi-Fi would otherwise copy
+            # the Photos index at Wi-Fi speed
+            try:
+                ld = await create_using_usbmux(self.device_id, connection_type="USB")
+            except Exception:
+                ld = await create_using_usbmux(self.device_id)
             afc = AfcService(ld)
             try:
                 return await coro_fn(afc)
@@ -447,34 +452,62 @@ class IOSDriver(Driver):
                     pass
         return asyncio.run(go())
 
-    def list_camera_roll(self) -> list[RollItem]:
+    def list_camera_roll(self, force: bool = False) -> list[RollItem]:
         """Read the phone's Photos library index (Photos.sqlite over AFC, read-only).
 
         This is authoritative: capture date, duration, kind, and the date-added order that
         Instagram's Recents grid uses. Falls back to walking /DCIM if the index can't be read.
+        The index is a few hundred MB on a big library, so it is only copied again when the
+        files on the phone have changed since the last read (size + modified time); `force`
+        always copies (the Sync button).
         """
         try:
-            items = self._list_from_photos_db()
+            items = self._list_from_photos_db(force=force)
             if items:
                 return items
         except Exception as e:
             log.warning("%s: Photos index unreadable (%s); falling back to /DCIM listing", self.name, e)
         return self._list_from_dcim()
 
-    def _list_from_photos_db(self) -> list[RollItem]:
+    _PHOTOS_FILES = ("Photos.sqlite", "Photos.sqlite-wal", "Photos.sqlite-shm")
+
+    def _list_from_photos_db(self, force: bool = False) -> list[RollItem]:
         import sqlite3
 
+        async def signature(afc):
+            sig = []
+            for f in self._PHOTOS_FILES:
+                try:
+                    st = await afc.stat(f"/PhotoData/{f}")
+                    sig.append((f, int(st.get("st_size") or 0), str(st.get("st_mtime"))))
+                except Exception:
+                    sig.append((f, -1, ""))
+            return tuple(sig)
+
+        cached = getattr(self, "_photos_cache", None)
+        if not force and cached is not None:
+            try:
+                if self._afc(signature) == cached[0]:
+                    log.info("%s: Photos index unchanged on the phone; using the last read", self.name)
+                    self.album_sorts = cached[2]
+                    return list(cached[1])
+            except Exception as e:
+                log.warning("%s: could not check the Photos index (%s); reading it again", self.name, e)
+
         async def pull(afc):
+            sig = await signature(afc)
             out = {}
-            for f in ("Photos.sqlite", "Photos.sqlite-wal", "Photos.sqlite-shm"):
+            for f in self._PHOTOS_FILES:
                 try:
                     out[f] = await afc.get_file_contents(f"/PhotoData/{f}")
                 except Exception:
                     if f == "Photos.sqlite":
                         raise
-            return out
+            return sig, out
 
-        files = self._afc(pull)
+        t0 = time.time()
+        sig, files = self._afc(pull)
+        log.info("%s: Photos index copied (%.0f MB in %.1fs)", self.name, sum(len(b) for b in files.values()) / 1e6, time.time() - t0)
         with tempfile.TemporaryDirectory() as td:
             for name, data in files.items():
                 (Path(td) / name).write_bytes(data)
@@ -504,6 +537,7 @@ class IOSDriver(Driver):
                 authoritative=True,
                 albums=tuple(albums_by_asset.get(pk, ())),
             ))
+        self._photos_cache = (sig, list(items), dict(getattr(self, 'album_sorts', {}) or {}))
         return items
 
     def _list_from_dcim(self) -> list[RollItem]:

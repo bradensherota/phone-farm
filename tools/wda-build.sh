@@ -15,6 +15,25 @@ if [ ! -d "$SRC/WebDriverAgent.xcodeproj" ]; then
   echo "Fetching WebDriverAgent…"
   git clone --depth 1 https://github.com/appium/WebDriverAgent.git "$SRC"
 fi
+# A Mac that hasn't signed anything in years can have an Apple Development certificate whose
+# chain is broken: the Apple WWDR intermediate it was issued under expired in 2023. Then the
+# certificate exists but counts as invalid. Installing Apple's current intermediates fixes it.
+ALL_IDS=$(security find-identity -p codesigning 2>/dev/null | grep -c "Apple Development" || true)
+VALID_IDS=$(security find-identity -v -p codesigning 2>/dev/null | grep -c "Apple Development" || true)
+if [ "${ALL_IDS:-0}" -gt 0 ] && [ "${VALID_IDS:-0}" -eq 0 ]; then
+  echo "Your Apple Development certificate is there but its chain is broken (expired Apple intermediate). Installing Apple's current intermediates…"
+  TMPD=$(mktemp -d)
+  for g in G3 G4 G5 G6; do
+    if curl -fsSL "https://www.apple.com/certificateauthority/AppleWWDRCA${g}.cer" -o "$TMPD/$g.cer" \
+       && openssl x509 -inform der -in "$TMPD/$g.cer" -noout -subject 2>/dev/null | grep -q "Apple Worldwide Developer Relations"; then
+      security import "$TMPD/$g.cer" -k "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
+    fi
+  done
+  rm -rf "$TMPD"
+  VALID_IDS=$(security find-identity -v -p codesigning 2>/dev/null | grep -c "Apple Development" || true)
+  echo "Valid signing identities now: ${VALID_IDS:-0}"
+fi
+
 TEAM="${2:-${PHONEFARM_TEAM_ID:-}}"
 if [ -z "$TEAM" ]; then
   # the Team ID is the OU of a valid Apple Development certificate (the id in the certificate's

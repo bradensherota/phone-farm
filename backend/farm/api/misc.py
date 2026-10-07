@@ -69,6 +69,32 @@ def put_settings(body: dict[str, str]):
     return settings_mod.set_many(body)
 
 
+@router.post("/settings/apply-link")
+def apply_default_link(platform: str, s: Session = Depends(get_session)):
+    """Set the platform's default story link on every account of that platform, and on their
+    stories that haven't posted yet. One change, everywhere."""
+    from ..models import Account, Job, JobStatus, Platform
+    try:
+        plat = Platform(platform)
+    except ValueError:
+        raise HTTPException(400, "platform must be instagram or tiktok")
+    link = (settings_mod.get(f"default_link_{platform}", "") or "").strip()
+    if not link:
+        raise HTTPException(400, "set the default link first")
+    accounts = s.query(Account).filter(Account.platform == plat).all()
+    n_acc = n_jobs = 0
+    for a in accounts:
+        if (a.story_link or "") != link:
+            a.story_link = link
+            n_acc += 1
+        for j in s.query(Job).filter(Job.account_id == a.id, Job.status.in_([JobStatus.scheduled, JobStatus.failed])).all():
+            if j.action.value.endswith("_story") and j.link != link:
+                j.link = link
+                n_jobs += 1
+    s.commit()
+    return {"link": link, "accounts": n_acc, "pending_stories": n_jobs}
+
+
 @router.get("/runner", response_model=RunnerState)
 def runner_state():
     return RunnerState(

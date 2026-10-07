@@ -51,7 +51,13 @@ export default function SettingsPage() {
                 {f.type === "bool" ? (
                   <label className="switch" title="Takes effect immediately"><input type="checkbox" checked={values[f.key] === "true"} onChange={(e) => flip(f.key, f.label, e.target.checked)} /></label>
                 ) : f.type === "text" ? (
-                  <input className="input" style={{ width: 260 }} type="text" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+                  <span className="row">
+                    <input className="input" style={{ width: 260 }} type="text" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
+                    {(f.key === "default_link_instagram" || f.key === "default_link_tiktok") && (
+                      <button className="btn sm" disabled={values[f.key] !== saved[f.key] || !(values[f.key] || "").trim()} title={values[f.key] !== saved[f.key] ? "Save first, then apply" : "Put this link on every account of this platform and on their stories that haven't posted yet"}
+                              onClick={async () => { try { const r = await api.applyDefaultLink(f.key === "default_link_instagram" ? "instagram" : "tiktok"); toast(`${r.link} set on ${r.accounts} account(s) and ${r.pending_stories} pending stor${r.pending_stories === 1 ? "y" : "ies"}`); } catch (e: any) { toast(e.message, "err"); } }}>Apply to all accounts</button>
+                    )}
+                  </span>
                 ) : (
                   <input className="input" style={{ width: 110 }} type="number" step="any" value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} />
                 )}

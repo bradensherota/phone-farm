@@ -672,6 +672,16 @@ def ig_add_link_sticker(p: Phone, link: str, link_text: str) -> None:
         p.type(link_text, "sticker text")
     p.tap(name="Done", what="Done (link)")
     p.wait(predicate="label BEGINSWITH 'Link Sticker'", what="link sticker on story", timeout=10)
+    # a real sticker on the canvas is ~250pt wide; ~90pt is the tray's chip, which is what is
+    # left when Instagram couldn't create the sticker (no connection). Stretching that chip
+    # throws the editor away, so wait for the real thing and give up cleanly if it never comes.
+    for _ in range(6):
+        e = p.el(predicate="label BEGINSWITH 'Link Sticker'").wait(timeout=2, raise_error=False)
+        if e is not None and e.bounds.width >= 150:
+            break
+        time.sleep(1.5)
+    else:
+        raise FlowError("The link sticker wasn't created (Instagram may have no connection right now); will try again")
     ig_place_link_sticker(p)
 
 

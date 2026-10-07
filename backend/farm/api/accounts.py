@@ -47,8 +47,17 @@ def patch_account(account_id: int, body: AccountPatch, s: Session = Depends(get_
         data["handle"] = data["handle"].lstrip("@")
     if "device_id" in data and s.get(Device, data["device_id"]) is None:
         raise HTTPException(404, "device not found")
+    old_link = a.story_link
     for k, v in data.items():
         setattr(a, k, v)
+    if "story_link" in data and (data["story_link"] or "") != (old_link or ""):
+        # the link follows the account: stories planned but not yet posted take the new one
+        from ..models import Job, JobStatus
+        for j in s.query(Job).filter(Job.account_id == a.id, Job.status.in_([JobStatus.scheduled, JobStatus.failed])).all():
+            if j.link and j.action.value.endswith("_story") and j.link in (old_link or "", ""):
+                j.link = data["story_link"] or ""
+            elif j.action.value.endswith("_story") and not j.link:
+                j.link = data["story_link"] or ""
     s.commit()
     s.refresh(a)
     return a

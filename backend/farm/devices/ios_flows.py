@@ -936,6 +936,11 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
                 if posted():
                     return True, ("Trial reel shared (uploading)" if trial else "Reel shared (uploading)")
                 time.sleep(0.5)
+            # one-time "Allow Instagram to translate your voice?" sheet after Share: the blue
+            # button shares (with translation on, as Braden wants); nothing else to press
+            if p.tap_if(predicate="type == 'XCUIElementTypeButton' AND label BEGINSWITH 'Share with voice translation'",
+                        what="Share with voice translation (one-time prompt)", timeout=0.5, pause=1.5):
+                continue
             # clear a pop-up if one is sitting over the sheet, then press Share again
             p.tap_if(predicate="type == 'XCUIElementTypeButton' AND (label == 'OK' OR label == 'Got it' OR label == 'Continue' OR label == 'Share anyway')",
                      what="dismiss pop-up", timeout=0.5, pause=0.8)

@@ -157,7 +157,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
       setPicks([]);
       onSaved();
       if (andNext && next) onSwitch(next.account, next.device);
-      else await loadExisting();
+      else { await loadExisting(); api.media(device.id).then(setItems).catch(() => {}); }
     } catch (e: any) { toast(e.message, "err"); }
     finally { setSaving(false); }
   };
@@ -260,8 +260,11 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                   {ex && <span className={`fill-badge existing ${slotOf(ex.action)}`} title={`Already planned: ${ex.status}`}>{LETTER[slotOf(ex.action)]} · {dayLabel(ex.run_date)}</span>}
                   {!pick && !ex && m.index !== null && <span className="idx">#{m.index + 1}</span>}
                   {storyAlbum && inAlbum(m, storyAlbum) && <span className="badge album">★ {storyAlbum}</span>}
-                  {m.posted_at && (
-                    <span className="tags"><span className="badge posted" title={m.posted_on ? `Posted on ${m.posted_on}` : "Posted"}>Posted {new Date(m.posted_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span></span>
+                  {(m.posted_at || m.scheduled_for) && (
+                    <span className="tags">
+                      {m.posted_at && <span className="badge posted" title={m.posted_on ? `Posted on ${m.posted_on}` : "Posted"}>Posted {new Date(m.posted_at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>}
+                      {m.scheduled_for && <span className="badge scheduled" title={m.scheduled_on ? `Planned: ${m.scheduled_on}` : "Planned"}>Scheduled {new Date(m.scheduled_for + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}</span>}
+                    </span>
                   )}
                   <div className="meta">
                     <span className="fn">{m.filename.split("/").pop()}</span>

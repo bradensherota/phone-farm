@@ -4,6 +4,7 @@ import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, 
 import type { DayStart } from "../lib/api";
 import { Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import PlanDrawer from "../components/PlanDrawer";
+import AccountFill from "../components/AccountFill";
 
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -20,6 +21,10 @@ export default function PlannerPage() {
   const startFor = (deviceId: string, day: string) => (starts || []).find((x: DayStart) => x.device_id === deviceId && x.run_date === day)?.start || "";
   const setStart = async (deviceId: string, day: string, value: string) => { await scheduleApi.put(deviceId, day, value); reloadStarts(); };
   const [sel, setSel] = useState<{ account: Account; device: Device; date: string } | null>(null);
+  // click an account's handle: fill its coming days in one go (clips in order, captions inline)
+  const [fill, setFill] = useState<{ account: Account; device: Device } | null>(null);
+  const flat = useMemo(() => (devices || []).flatMap((d) => d.accounts.filter((a) => a.status === "active").map((a) => ({ account: a, device: d }))), [devices]);
+  const nextOf = (a: Account) => { const i = flat.findIndex((x) => x.account.id === a.id); return i >= 0 && i + 1 < flat.length ? flat[i + 1] : null; };
   const toast = useToast();
   const ask = useConfirm();
   const runDay = async (device: Device, day: string, count: number) => {
@@ -70,13 +75,25 @@ export default function PlannerPage() {
           </thead>
           <tbody>
             {(devices || []).map((dev) => (
-              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} startFor={startFor} setStart={setStart} runDay={runDay} autoStart={autoStart} />
+              <DeviceRows key={dev.id} device={dev} days={days} today={today} byCell={byCell} onPick={(account, date) => setSel({ account, device: dev, date })} onFill={(account) => setFill({ account, device: dev })} startFor={startFor} setStart={setStart} runDay={runDay} autoStart={autoStart} />
             ))}
           </tbody>
         </table>
         {devices && devices.length === 0 && <div className="empty">No phones yet.</div>}
       </div>
 
+      {fill && (
+        <AccountFill
+          key={fill.account.id}
+          account={fill.account}
+          device={fill.device}
+          weekStart={weekStart}
+          next={nextOf(fill.account)}
+          onSwitch={(account, device) => setFill({ account, device })}
+          onClose={() => setFill(null)}
+          onSaved={reload}
+        />
+      )}
       {sel && (
         <PlanDrawer
           account={sel.account}
@@ -91,9 +108,10 @@ export default function PlannerPage() {
   );
 }
 
-function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, runDay, autoStart }: {
+function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, setStart, runDay, autoStart }: {
   device: Device; days: Date[]; today: string; byCell: Map<string, Job[]>;
   onPick: (a: Account, date: string) => void;
+  onFill: (a: Account) => void;
   startFor: (deviceId: string, day: string) => string;
   setStart: (deviceId: string, day: string, value: string) => Promise<void>;
   runDay: (device: Device, day: string, count: number) => Promise<void>;
@@ -130,10 +148,11 @@ function DeviceRows({ device, days, today, byCell, onPick, startFor, setStart, r
       {accounts.map((a) => (
         <tr key={a.id}>
           <td>
-            <div className="acct-cell">
+            <div className={`acct-cell ${a.status === "active" ? "clickable" : ""}`} title="Fill this account's coming days: pick clips in order, captions inline" onClick={() => a.status === "active" && onFill(a)}>
               <PlatformIcon platform={a.platform} />
               <span className="h">@{a.handle}</span>
               {a.status === "paused" && <Pill kind="paused">paused</Pill>}
+              {a.status === "active" && <span className="fill-hint">fill ›</span>}
             </div>
           </td>
           {days.map((d) => {

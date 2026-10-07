@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from pathlib import Path
 import threading
 import time
 from datetime import datetime
@@ -18,7 +19,7 @@ from .simulated import SimulatedDriver
 
 log = logging.getLogger("farm.devices")
 
-MAX_THUMBS_PER_SYNC = 25  # real phones: each video thumbnail means pulling the whole file over USB
+MAX_THUMBS_PER_SYNC = 150  # only album items are pulled (a few dozen per phone), so one sync covers them
 
 # Simulated stand-ins, seeded only when no real phone has ever been seen.
 SEED_DEVICES = [
@@ -277,10 +278,11 @@ class DeviceManager:
 
         # Pass 1: mirror the listing. Short transaction, no device I/O inside it.
         todo: list[tuple[int, str, bool, bool]] = []  # (row id, filename, needs_thumb, needs_probe)
-        album_ids: set[int] = set()  # rows in the queue/story album: their thumbnails come first
         with session_scope() as s:
             dev = s.get(Device, device_id)
-            prio_albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""} if dev is not None else set()
+            # only the queue/story albums get thumbnails, hover clips and probes: the rest of the
+            # roll is just an index entry (25k items on the 17; pulling them all is far too heavy)
+            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""} if dev is not None else set()
             sorts = getattr(drv, "album_sorts", None)
             if isinstance(sorts, dict) and dev is not None:
                 import json as _json
@@ -310,19 +312,15 @@ class DeviceManager:
                 row.present = True
                 row.last_seen = now
                 s.flush()
-                if not row.thumb_path or not row.probed:
+                in_album = any(t.strip() in albums for t in (row.albums or "").split("|") if t)
+                if in_album and (not row.thumb_path or not row.probed):
                     todo.append((row.id, it.filename, not row.thumb_path, not row.probed))
-                    if any(t.strip() in prio_albums for t in (row.albums or "").split("|") if t):
-                        album_ids.add(row.id)
             for fname, row in existing.items():
                 if fname not in seen and row.present:
                     row.present = False
 
         if albums_only:
             return len(items)
-        # album items first (they're what gets planned), then the rest newest first: on a 25k roll
-        # the 25 pulls per sync would otherwise never reach an older clip you just added to the album
-        todo.sort(key=lambda t: 0 if t[0] in album_ids else 1)
         # Pass 2: pull files for thumbnails + capture metadata, newest first, a bounded number per
         # sync. Each row is written in its own short transaction so the UI and runner never wait.
         # An album video's silent hover clip is made from the same pull.
@@ -379,7 +377,39 @@ class DeviceManager:
                     if row is not None:
                         for k, v in update.items():
                             setattr(row, k, v)
+        try:
+            pruned = self.prune_offalbum(device_id)
+            if pruned:
+                log.info("%s: dropped thumbnails/hover clips of %d items that left the album", device_id, pruned)
+        except Exception:
+            log.exception("prune failed")
         return len(items)
+
+    def prune_offalbum(self, device_id: str) -> int:
+        """Drop thumbnails and hover clips of items that are no longer in the queue/story album
+        and that no planned or posted job refers to. Keeps the Mac's copy small."""
+        from ..models import Job
+        n = 0
+        with session_scope() as s:
+            dev = s.get(Device, device_id)
+            if dev is None:
+                return 0
+            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""}
+            used = {mid for (mid,) in s.query(Job.media_id).filter(Job.device_id == device_id, Job.media_id.isnot(None)).distinct()}
+            rows = s.query(MediaItem).filter(MediaItem.device_id == device_id, (MediaItem.thumb_path != "") | (MediaItem.hover_path != "")).all()
+            for r in rows:
+                if r.id in used or any(t.strip() in albums for t in (r.albums or "").split("|") if t):
+                    continue
+                for attr in ("thumb_path", "hover_path"):
+                    pth = getattr(r, attr)
+                    if pth and pth != "skip":
+                        try:
+                            Path(pth).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    setattr(r, attr, "")
+                n += 1
+        return n
 
     def sync_all(self) -> None:
         for did in list(self._drivers):

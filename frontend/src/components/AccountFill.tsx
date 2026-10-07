@@ -70,8 +70,8 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   useEffect(() => {
     if (albumTouched || !items.length) return;
     const usable = (album: string, video: boolean) => !!album && items.some((m) => inAlbum(m, album) && (!video || m.kind === "video"));
-    if (curSlot === "story") setAlbumFilter(usable(storyAlbum, false) ? "story" : usable(queueAlbum, false) ? "queue" : "");
-    else setAlbumFilter(usable(queueAlbum, true) ? "queue" : "");
+    if (curSlot === "story") setAlbumFilter(usable(storyAlbum, false) ? "story" : "queue");
+    else setAlbumFilter("queue");
   }, [curSlot, items.length, albumTouched, storyAlbum, queueAlbum]);
 
   const videosOnly = curSlot !== "story";
@@ -179,8 +179,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
         <div className="modal-head">
           <PlatformIcon platform={account.platform} />
           <h2 style={{ whiteSpace: "nowrap", flex: "0 1 auto" }}>@{account.handle} <span className="dim small">· {device.name}</span></h2>
-          <div className="tabs compact" title="Show only items that are in this album on the phone">
-            <button className={albumFilter === "" ? "active" : ""} onClick={() => { setAlbumTouched(true); setAlbumFilter(""); }}>All</button>
+          <div className="tabs compact" title="The app only works with these two albums on the phone">
             {queueAlbum && <button className={albumFilter === "queue" ? "active" : ""} onClick={() => { setAlbumTouched(true); setAlbumFilter("queue"); }}>{queueAlbum}</button>}
             {storyAlbum && <button className={albumFilter === "story" ? "active" : ""} onClick={() => { setAlbumTouched(true); setAlbumFilter("story"); }}>★ {storyAlbum}</button>}
           </div>
@@ -234,8 +233,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
         </div>
 
         <div className="modal-body">
-          {activeAlbum && shown.length === 0 && <div className="empty">Nothing from "{activeAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
-          {!activeAlbum && shown.length === 0 && <div className="empty">Nothing here yet. AirDrop content to the phone, then Sync.</div>}
+          {shown.length === 0 && <div className="empty">Nothing from "{activeAlbum || queueAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
           <div className="roll">
             {shown.map((m) => {
               const pick = picks.find((p) => p.media.id === m.id);

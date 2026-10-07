@@ -28,7 +28,7 @@ export default function DevicePage() {
           <div className="tabs">
             <button className={tab === "day" ? "active" : ""} onClick={() => setTab("day")}>Day checklist</button>
             <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Accounts ({device.accounts.length})</button>
-            <button className={tab === "roll" ? "active" : ""} onClick={() => setTab("roll")}>Camera roll ({device.media_count})</button>
+            <button className={tab === "roll" ? "active" : ""} onClick={() => setTab("roll")}>{device.queue_album || "Farm Queue"} ({device.media_count})</button>
             <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Schedule</button>
           </div>
           {tab === "day" && <DayChecklist device={device} />}

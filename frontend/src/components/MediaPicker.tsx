@@ -94,7 +94,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   const [storyAlbum, setStoryAlbum] = useState("");
   const [queueAlbum, setQueueAlbum] = useState("");
   const [albumSorts, setAlbumSorts] = useState<Record<string, { by: string; ascending: boolean }>>({});
-  const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("");
+  const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("queue");
   const albumOnly = albumFilter !== "";
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
   const [syncing, setSyncing] = useState(false);
@@ -114,7 +114,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   useEffect(() => {
     if (!items.length) return;
     const usable = (album: string) => !!album && items.some((m) => inAlbum(m, album) && (kind !== "video" || m.kind === "video"));
-    setAlbumFilter(usable(queueAlbum) ? "queue" : usable(storyAlbum) ? "story" : "");
+    setAlbumFilter(usable(queueAlbum) ? "queue" : usable(storyAlbum) ? "story" : "queue");
   }, [storyAlbum, queueAlbum, items.length]);
 
   // inside an album, show the clips in the order the phone's album shows them (capture date,
@@ -141,8 +141,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Camera roll · {deviceName}</h2>
-          <div className="tabs compact" title="Show only items that are in this album on the phone">
-            <button className={albumFilter === "" ? "active" : ""} onClick={() => setAlbumFilter("")}>All</button>
+          <div className="tabs compact" title="The app only works with these two albums on the phone">
             {queueAlbum && <button className={albumFilter === "queue" ? "active" : ""} onClick={() => setAlbumFilter("queue")}>{queueAlbum}</button>}
             {storyAlbum && <button className={albumFilter === "story" ? "active" : ""} onClick={() => setAlbumFilter("story")}>★ {storyAlbum}</button>}
           </div>
@@ -159,12 +158,12 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
           <button className="btn sm ghost" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {albumOnly && shown.length === 0 && <div className="empty">Nothing from "{activeAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
-          {(!albumOnly || shown.length > 0) && <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} />}
+          {shown.length === 0 && <div className="empty">Nothing from "{activeAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
+          {shown.length > 0 && <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} />}
         </div>
         <div className="modal-foot">
           <span className="dim small grow">
-            Click an item to preview it, then "Use this". Anything you plan must be in the "{queueAlbum || "queue"}" album (or the ★ album) on the phone; that's where the app picks it from.
+            Click an item to preview it, then "Use this". The app only sees the "{queueAlbum || "queue"}" album (and the ★ album) on the phone; add clips there in Photos, then Sync.
           </span>
         </div>
       </div>

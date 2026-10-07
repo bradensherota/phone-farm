@@ -32,7 +32,12 @@ def _today_summary(s: Session, device_id: str) -> TodaySummary:
 
 def device_out(s: Session, d: Device) -> DeviceOut:
     info = manager.status(d.id)
-    media_count = s.query(func.count(MediaItem.id)).filter(MediaItem.device_id == d.id, MediaItem.present.is_(True)).scalar()
+    albums = [a for a in ((d.queue_album or "").strip(), (d.story_album or "").strip()) if a]
+    media_q = s.query(func.count(MediaItem.id)).filter(MediaItem.device_id == d.id, MediaItem.present.is_(True))
+    if albums:
+        from sqlalchemy import or_
+        media_q = media_q.filter(or_(*[MediaItem.albums.contains(a) for a in albums]))
+    media_count = media_q.scalar()  # what's in the queue/story album: the only items the app works with
     out = DeviceOut.model_validate(d)
     out.connected = bool(info.get("connected"))
     out.has_passcode = bool(d.passcode)
@@ -352,9 +357,13 @@ def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(
 
 @router.get("/{device_id}/media", response_model=list[MediaOut])
 def list_media(device_id: str, s: Session = Depends(get_session)):
+    dev = s.get(Device, device_id)
+    albums = [a for a in ((dev.queue_album or "").strip(), (dev.story_album or "").strip()) if a] if dev is not None else []
+    from sqlalchemy import or_
     rows = (
         s.query(MediaItem)
         .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True))
+        .filter(or_(*[MediaItem.albums.contains(a) for a in albums]) if albums else MediaItem.id < 0)  # album items only
         .order_by(func.coalesce(MediaItem.added_at, MediaItem.created_at).desc(), MediaItem.id.desc())
         .all()
     )

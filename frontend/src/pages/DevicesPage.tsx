@@ -74,7 +74,7 @@ export default function DevicesPage() {
                   {d.connecting && <div className="small" style={{ color: "var(--amber)" }}>Starting runner…</div>}
                   {d.parked && !d.connected && !d.connecting && <div className="small dim">Disconnected by you · press Connect, or Start today / Run day</div>}
                   {d.error && !d.connecting && <div className="small" style={{ color: "var(--red)" }}>{d.error}</div>}
-                  <div className="small dim">{d.media_count} items in camera roll</div>
+                  <div className="small dim">{d.media_count} in {d.queue_album || "Farm Queue"}{d.story_album ? ` / ${d.story_album}` : ""}</div>
                   <div className="acct-list">
                     {d.accounts.map((a) => (
                       <div className="acct" key={a.id}>

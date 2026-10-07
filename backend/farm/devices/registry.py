@@ -277,13 +277,14 @@ class DeviceManager:
 
         # Pass 1: mirror the listing. Short transaction, no device I/O inside it.
         todo: list[tuple[int, str, bool, bool]] = []  # (row id, filename, needs_thumb, needs_probe)
+        album_ids: set[int] = set()  # rows in the queue/story album: their thumbnails come first
         with session_scope() as s:
+            dev = s.get(Device, device_id)
+            prio_albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""} if dev is not None else set()
             sorts = getattr(drv, "album_sorts", None)
-            if isinstance(sorts, dict):
-                dev = s.get(Device, device_id)
-                if dev is not None:
-                    import json as _json
-                    dev.album_sorts = _json.dumps(sorts)
+            if isinstance(sorts, dict) and dev is not None:
+                import json as _json
+                dev.album_sorts = _json.dumps(sorts)
             existing = {m.filename: m for m in s.query(MediaItem).filter_by(device_id=device_id).all()}
             seen: set[str] = set()
             for it in items:  # newest first
@@ -311,12 +312,17 @@ class DeviceManager:
                 s.flush()
                 if not row.thumb_path or not row.probed:
                     todo.append((row.id, it.filename, not row.thumb_path, not row.probed))
+                    if any(t.strip() in prio_albums for t in (row.albums or "").split("|") if t):
+                        album_ids.add(row.id)
             for fname, row in existing.items():
                 if fname not in seen and row.present:
                     row.present = False
 
         if albums_only:
             return len(items)
+        # album items first (they're what gets planned), then the rest newest first: on a 25k roll
+        # the 25 pulls per sync would otherwise never reach an older clip you just added to the album
+        todo.sort(key=lambda t: 0 if t[0] in album_ids else 1)
         # Pass 2: pull files for thumbnails + capture metadata, newest first, a bounded number per
         # sync. Each row is written in its own short transaction so the UI and runner never wait.
         # An album video's silent hover clip is made from the same pull.

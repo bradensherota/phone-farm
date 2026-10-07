@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from ..db import get_session
-from ..models import Device, Job, JobStatus, MediaItem
+from ..models import Device, Job, JobLog, JobStatus, MediaItem
 from ..schemas import DeviceOut, DevicePatch, MediaOut, TodaySummary
 from ..state import manager, runner
 

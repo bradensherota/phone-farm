@@ -344,9 +344,9 @@ def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(
     if d is None:
         raise HTTPException(404, "device not found")
     drv = manager.driver(device_id)
-    if d.parked and (drv is None or not drv.is_connected()):
-        raise HTTPException(409, "The phone is disconnected; press Connect first")
-    manager.sync_media(device_id, albums_only=albums_only, force=True)  # the button always reads fresh
+    if drv is None or (not drv.is_connected() and not manager.on_usb(device_id)):
+        raise HTTPException(409, "The phone isn't on USB; plug it in to sync")
+    manager.sync_media(device_id, albums_only=albums_only, force=True)  # the button always reads fresh; works over the cable even with the runner off
     return list_media(device_id, s)
 
 

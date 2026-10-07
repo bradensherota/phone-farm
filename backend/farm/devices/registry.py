@@ -118,6 +118,14 @@ class DeviceManager:
             if connect and not dev.parked:
                 self.connect_async(dev.id)
 
+    def on_usb(self, device_id: str) -> bool:
+        """Is the phone on the cable right now (whether or not its runner is up)?"""
+        try:
+            from .ios import discover_ios_devices
+            return any(d.get("udid") == device_id for d in discover_ios_devices())
+        except Exception:
+            return False
+
     # ---- parked: runner stopped by hand ------------------------------------
     def is_parked(self, device_id: str) -> bool:
         with session_scope() as s:
@@ -246,8 +254,10 @@ class DeviceManager:
         `albums_only`: just refresh the listing (album membership, order, lengths) and skip the
         slow thumbnail pulls; used before every job so the queue album is known exactly."""
         drv = self._drivers.get(device_id)
-        if drv is None or not drv.is_connected():
+        if drv is None:
             return 0
+        if not drv.is_connected() and not (drv.kind == "ios" and self.on_usb(device_id)):
+            return 0  # reading the roll needs the cable, not the runner: a parked phone on USB is fine
         items = drv.list_camera_roll(force=force) if drv.kind == "ios" else drv.list_camera_roll()
         now = datetime.now()
         thumb_dir = THUMB_DIR / device_id

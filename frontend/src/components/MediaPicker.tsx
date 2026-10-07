@@ -17,11 +17,17 @@ export const inAlbum = (m: Media, album: string) =>
 
 /** The thumbnail; while `playing`, the silent hover clip instead (1.5x, looping, no sound). */
 export function HoverThumb({ media, playing }: { media: Media; playing: boolean }) {
-  if (playing && media.has_hover) {
-    return <video className="hover" src={hoverUrl(media)} muted loop playsInline autoPlay preload="auto"
-                  ref={(el) => { if (el) el.playbackRate = HOVER_RATE; }} onLoadedMetadata={(e) => { e.currentTarget.playbackRate = HOVER_RATE; }} />;
-  }
-  return <img src={thumbUrl(media)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />;
+  // the thumbnail stays mounted and the clip sits on top of it (no pointer events), so a click
+  // never lands on an element that is being swapped out from under the mouse
+  return (
+    <>
+      <img src={thumbUrl(media)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+      {playing && media.has_hover && (
+        <video className="hover" src={hoverUrl(media)} muted loop playsInline autoPlay preload="auto"
+               ref={(el) => { if (el) el.playbackRate = HOVER_RATE; }} onLoadedMetadata={(e) => { e.currentTarget.playbackRate = HOVER_RATE; }} />
+      )}
+    </>
+  );
 }
 
 export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: Media[]; selectedId: number | null; onSelect: (m: Media) => void; storyAlbum?: string }) {

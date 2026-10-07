@@ -307,4 +307,5 @@ a { color: inherit; text-decoration: none; }
 .planner .acct-cell.clickable:hover .fill-hint { opacity: 1; }
 .fill-modal .roll { align-items: start; }
 .fill-modal .modal-head { flex-wrap: wrap; }
-.roll-item .th video.hover { width: 100%; height: 100%; object-fit: cover; background: #000; }
+.roll-item .th { position: relative; }
+.roll-item .th video.hover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }

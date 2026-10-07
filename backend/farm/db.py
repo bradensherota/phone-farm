@@ -53,6 +53,7 @@ _ADDED_COLUMNS = [
     ("jobs", "group_scope", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "origin_media_id", "INTEGER"),
     ("devices", "parked", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("media", "hover_path", "VARCHAR NOT NULL DEFAULT ''"),
 ]
 
 

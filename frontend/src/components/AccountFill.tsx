@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd } from "../lib/api";
 import { PlatformIcon, useConfirm, usePoll, useToast } from "./common";
-import { inAlbum } from "./MediaPicker";
+import { HoverThumb, inAlbum } from "./MediaPicker";
 
 // Fill an account's coming days in one sitting: pick clips in the order they should go out,
 // type the caption under each, and every pick lands on the next day that has nothing of its
@@ -41,6 +41,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const [allAccounts, setAllAccounts] = useState(false);
   const [allPhones, setAllPhones] = useState(false);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [hoverId, setHoverId] = useState<number | null>(null);
   const [lastAdded, setLastAdded] = useState<number | null>(null);
   const [batchLink, setBatchLink] = useState("");
   const [saving, setSaving] = useState(false);
@@ -243,6 +244,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
               const cls = pick ? `fill-${slotOf(pick.action)}` : ex ? "fill-existing" : "";
               return (
                 <div key={m.id} className={`roll-item ${cls} ${m.posted_at ? "posted" : ""}`} onClick={() => toggle(m)}
+                     onMouseEnter={() => setHoverId(m.id)} onMouseLeave={() => setHoverId((h) => (h === m.id ? null : h))}
                      title={`${m.filename}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
                   <div className="th">
                     {previewId === m.id ? (
@@ -250,7 +252,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                         ? <video src={`/api/media/${m.id}/preview`} autoPlay controls playsInline onClick={(e) => e.stopPropagation()} />
                         : <img className="full" src={`/api/media/${m.id}/preview`} alt="" onClick={(e) => e.stopPropagation()} />
                     ) : (
-                      <img src={thumbUrl(m)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      <HoverThumb media={m} playing={hoverId === m.id && !pick} />
                     )}
                   </div>
                   <button className="badge" title={previewId === m.id ? "Stop the preview" : "Preview it right here"} onClick={(e) => { e.stopPropagation(); setPreviewId(previewId === m.id ? null : m.id); }}>

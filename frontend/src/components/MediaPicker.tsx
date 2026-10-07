@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Media } from "../lib/api";
-import { api, fmtDuration, thumbUrl } from "../lib/api";
+import { api, fmtDuration, HOVER_RATE, hoverUrl, thumbUrl } from "../lib/api";
 import { useToast } from "./common";
 
 interface Props {
@@ -15,13 +15,25 @@ interface Props {
 export const inAlbum = (m: Media, album: string) =>
   !!album && (m.albums || "").split("|").map((t) => t.trim()).includes(album.trim());
 
+/** The thumbnail; while `playing`, the silent hover clip instead (1.5x, looping, no sound). */
+export function HoverThumb({ media, playing }: { media: Media; playing: boolean }) {
+  if (playing && media.has_hover) {
+    return <video className="hover" src={hoverUrl(media)} muted loop playsInline autoPlay preload="auto"
+                  ref={(el) => { if (el) el.playbackRate = HOVER_RATE; }} onLoadedMetadata={(e) => { e.currentTarget.playbackRate = HOVER_RATE; }} />;
+  }
+  return <img src={thumbUrl(media)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />;
+}
+
 export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: Media[]; selectedId: number | null; onSelect: (m: Media) => void; storyAlbum?: string }) {
+  const [hover, setHover] = useState<number | null>(null);
   if (!items.length) return <div className="empty">Nothing here yet. AirDrop content to the phone, then Sync.</div>;
   return (
     <div className="roll">
       {items.map((m) => (
-        <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""} ${m.posted_at ? "posted" : ""}`} onClick={() => onSelect(m)} title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
-          <div className="th"><img src={thumbUrl(m)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} /></div>
+        <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""} ${m.posted_at ? "posted" : ""}`} onClick={() => onSelect(m)}
+             onMouseEnter={() => setHover(m.id)} onMouseLeave={() => setHover((h) => (h === m.id ? null : h))}
+             title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
+          <div className="th"><HoverThumb media={m} playing={hover === m.id && selectedId !== m.id} /></div>
           <span className="badge">{m.kind === "video" ? `▶ ${fmtDuration(m.duration_s)}` : "photo"}</span>
           {m.index !== null && <span className="idx">#{m.index + 1}</span>}
           {storyAlbum && inAlbum(m, storyAlbum) && <span className="badge album">★ {storyAlbum}</span>}

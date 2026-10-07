@@ -52,6 +52,7 @@ class MediaOut(ORM):
     albums: str = ""
     present: bool
     has_thumb: bool = False
+    has_hover: bool = False  # a silent hover clip is on the Mac
     index: int | None = None  # position in Recents, newest first (0-based)
     posted_at: datetime | None = None  # latest finished post that used this item
     posted_on: str = ""  # "@handle (Reel), @other (Story)" for the tooltip

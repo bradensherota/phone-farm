@@ -309,6 +309,11 @@ class DeviceManager:
             return len(items)
         # Pass 2: pull files for thumbnails + capture metadata, newest first, a bounded number per
         # sync. Each row is written in its own short transaction so the UI and runner never wait.
+        # An album video's silent hover clip is made from the same pull.
+        from ..hover import hover_path_for, wanted as hover_wanted
+        with session_scope() as s:
+            dev_row = s.get(Device, device_id)
+            hover_albums = (dev_row.queue_album, dev_row.story_album) if dev_row is not None else ("", "")
         pulls = 0
         for row_id, filename, needs_thumb, needs_probe in todo:
             if pulls >= MAX_THUMBS_PER_SYNC:
@@ -317,10 +322,17 @@ class DeviceManager:
             if needs_thumb:
                 key = hashlib.sha1(f"{device_id}:{filename}".encode()).hexdigest()[:16]
                 out = thumb_dir / f"{key}.jpg"
+                hover_out = None
+                if drv.kind == "ios":
+                    with session_scope() as s:
+                        r = s.get(MediaItem, row_id)
+                        dev_stub = Device(id=device_id, name="", queue_album=hover_albums[0], story_album=hover_albums[1])
+                        if r is not None and not r.hover_path and hover_wanted(r, dev_stub):
+                            hover_out = hover_path_for(device_id, filename)
                 if not out.exists():
                     pulls += 1
                     try:
-                        data = drv.thumbnail(filename)
+                        data = drv.thumbnail(filename, hover_out=hover_out) if hover_out is not None else drv.thumbnail(filename)
                     except Exception as e:
                         log.warning("thumb %s failed: %s", filename, e)
                         data = None
@@ -328,6 +340,8 @@ class DeviceManager:
                         out.write_bytes(data)
                 if out.exists():
                     update["thumb_path"] = str(out)
+                if hover_out is not None and hover_out.exists():
+                    update["hover_path"] = str(hover_out)
             if needs_probe:
                 cached = filename in getattr(drv, "_meta_cache", {})
                 if not cached:

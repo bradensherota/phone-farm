@@ -115,6 +115,15 @@ PREVIEW_DIR = DATA_DIR / "previews"
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
 
+@router.get("/media/{media_id}/hover.mp4")
+def hover_clip(media_id: int, s: Session = Depends(get_session)):
+    """The silent 320px hover clip, if it has been made (see farm/hover.py)."""
+    m = s.get(MediaItem, media_id)
+    if m is None or not m.hover_path or m.hover_path == "skip" or not Path(m.hover_path).exists():
+        raise HTTPException(404, "no hover clip yet")
+    return FileResponse(m.hover_path, media_type="video/mp4", headers={"Cache-Control": "max-age=604800"})
+
+
 @router.get("/media/{media_id}/preview")
 def preview(media_id: int, s: Session = Depends(get_session)):
     """Browser-playable copy of a roll item: H.264 720p mp4 for video, JPEG for photos. Cached."""

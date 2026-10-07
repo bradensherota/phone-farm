@@ -24,6 +24,7 @@ def job_out(j: Job, s: Session | None = None) -> JobOut:
     if j.media is not None:
         out.media = MediaOut.model_validate(j.media)
         out.media.has_thumb = bool(j.media.thumb_path)
+        out.media.has_hover = bool(j.media.hover_path) and j.media.hover_path != "skip"
     out.has_screenshot = bool(j.screenshot_path) and Path(j.screenshot_path).exists()
     if j.group_key.startswith("allstories:"):
         try:

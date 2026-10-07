@@ -28,6 +28,8 @@ async def lifespan(app: FastAPI):
     sync_task = asyncio.create_task(asyncio.to_thread(manager.sync_all), name="initial-sync")
     runner.start()
     manager.start_watchdog()
+    from . import hover
+    hover.start_warmer(manager)  # silent hover clips for album videos, while phones sit idle on the cable
     log.info("Phone Farm ready")
     try:
         yield

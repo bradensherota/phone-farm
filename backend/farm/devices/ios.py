@@ -581,8 +581,9 @@ class IOSDriver(Driver):
     def pull_file(self, filename: str) -> bytes | None:
         return self._pull(filename)
 
-    def thumbnail(self, filename: str, max_px: int = 400) -> bytes | None:
-        """Pull the file once; make the thumbnail and remember its capture date + duration."""
+    def thumbnail(self, filename: str, max_px: int = 400, hover_out: Path | None = None) -> bytes | None:
+        """Pull the file once; make the thumbnail (and, for an album video, its silent hover clip
+        at `hover_out`) and remember its capture date + duration."""
         ext = Path(filename).suffix.lower()
         data = self._pull(filename)
         if not data:
@@ -592,6 +593,9 @@ class IOSDriver(Driver):
             local.write_bytes(data)
             self._meta_cache[filename] = _probe_media(local)
             from .simulated import _image_thumb, _video_thumb
+            if hover_out is not None and ext in VIDEO_EXT and not hover_out.exists():
+                from ..hover import make_hover
+                make_hover(local, hover_out)
             return _video_thumb(local, max_px) if ext in VIDEO_EXT else _image_thumb(local, max_px)
 
     def media_meta(self, filename: str) -> dict | None:

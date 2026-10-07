@@ -25,6 +25,7 @@ export interface Media {
   albums: string;
   present: boolean;
   has_thumb: boolean;
+  has_hover: boolean;
   index: number | null;
   posted_at: string | null;
   posted_on: string;
@@ -231,6 +232,8 @@ export const TIME_SLOTS: [string, string][] = Array.from({ length: 96 }, (_, i) 
 export const fmtHHMM = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
 
 export const thumbUrl = (m: Media | null | undefined) => (m ? `/api/media/${m.id}/thumb.jpg` : "");  // made on demand server-side
+export const hoverUrl = (m: Media) => `/api/media/${m.id}/hover.mp4`;  // silent 320px clip kept on the Mac
+export const HOVER_RATE = 1.5;
 export const screenUrl = (deviceId: string) => `/api/devices/${deviceId}/screen.png?t=${Date.now()}`;
 export const shotUrl = (jobId: number) => `/api/jobs/${jobId}/screenshot.png?t=${Date.now()}`;
 

@@ -381,6 +381,7 @@ def list_media(device_id: str, s: Session = Depends(get_session)):
     for i, m in enumerate(rows):
         mo = MediaOut.model_validate(m)
         mo.has_thumb = bool(m.thumb_path)
+        mo.has_hover = bool(m.hover_path) and m.hover_path != "skip"
         mo.index = i
         js = posted.get(m.id)
         if js:

@@ -239,7 +239,9 @@ def _image_thumb(p: Path, max_px: int) -> bytes | None:
                     capture_output=True, timeout=30,
                 )
                 return out_path.read_bytes() if out_path.exists() else None
+        from PIL import ImageOps
         img = Image.open(p)
+        img = ImageOps.exif_transpose(img) or img  # phones store photos sideways + an orientation tag; apply it
         img.thumbnail((max_px, max_px))
         buf = io.BytesIO()
         img.convert("RGB").save(buf, "JPEG", quality=85)

@@ -244,7 +244,11 @@ class Runner:
                         return
                     jobs = due_jobs(s, device, datetime.now())
                     if not jobs:
-                        drained = not first
+                        # done for real only when nothing of today's is still waiting (a retry
+                        # due in a few minutes keeps the runner up)
+                        pending = s.query(Job).filter(Job.device_id == device_id, Job.run_date == date.today(),
+                                                      Job.status == JobStatus.scheduled).count()
+                        drained = not first and pending == 0
                         return
                     job_id = jobs[0].id
                     gap_min, gap_max = device.gap_min_s, device.gap_max_s
@@ -326,6 +330,7 @@ class Runner:
             self._ensure_queued(device_id, job_id)
         else:
             self._refresh_album_membership(device_id, job_id)
+            self._use_album_copy(device_id, job_id)
 
         stage_now = {"name": ""}
 
@@ -453,6 +458,26 @@ class Runner:
                 return True
         self._finish(job_id, ok=False, message=NO_COPY_MSG, shot=None, attempt=0, stage="open", manual=True)
         return False
+
+    def _use_album_copy(self, device_id: str, job_id: int) -> None:
+        """The planned clip isn't in the queue/story album, but an identical copy on this phone
+        (same capture time, kind and length; an AirDrop twin) is: post that copy instead."""
+        from .groups import find_twin_media
+        with session_scope() as s:
+            job = s.query(Job).options(selectinload(Job.media)).get(job_id)
+            dev = s.get(Device, device_id)
+            if job is None or dev is None or job.media is None:
+                return
+            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""}
+            def in_album(m) -> bool:
+                return any(t.strip() in albums for t in (m.albums or "").split("|") if t)
+            if in_album(job.media):
+                return
+            twin = find_twin_media(s, device_id, job.media)
+            if twin is not None and twin.id != job.media.id and in_album(twin):
+                old = job.media.filename.split("/")[-1]
+                job.media_id = twin.id
+                s.add(JobLog(job_id=job_id, level="info", message=f"{old} isn't in the album, but its identical copy {twin.filename.split('/')[-1]} is; using that one"))
 
     def _refresh_album_membership(self, device_id: str, job_id: int) -> None:
         """You put items into the album on the phone yourself; make sure the app's copy of the

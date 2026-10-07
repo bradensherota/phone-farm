@@ -274,6 +274,9 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                   </div>
                   {pick && (
                     <div className="cap" onClick={(e) => e.stopPropagation()}>
+                      {!inAlbum(m, queueAlbum) && !inAlbum(m, storyAlbum) && (
+                        <div className="noalbum" title="The app only picks from the queue or story album on the phone. Add this clip to the album in Photos before it runs.">Not in {queueAlbum || "the album"} yet: add it in Photos before it runs</div>
+                      )}
                       <input value={pick.caption} autoFocus={lastAdded === m.id} placeholder={slotOf(pick.action) === "story" ? "Sticker text…" : "Caption…"}
                              onChange={(e) => setCaption(m.id, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); }} />
                     </div>
@@ -287,6 +290,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
         <div className="modal-foot">
           <span className="dim small grow">
             Tap a clip to plan it as the active kind; tap again to remove it. Each kind fills its own empty days from {dayLabel(fillFrom)} on. Dashed tiles are already planned.
+            {(() => { const n = picks.filter((p) => !inAlbum(p.media, queueAlbum) && !inAlbum(p.media, storyAlbum)).length; return n ? <b style={{ color: "var(--amber)" }}> {n} pick{n === 1 ? " isn't" : "s aren't"} in {queueAlbum || "the album"} yet.</b> : null; })()}
           </span>
           <button className="btn ghost" onClick={close}>Cancel</button>
           <button className="btn primary" disabled={saving || !picks.length} onClick={() => save(false)}>{saving ? "Saving…" : `Save ${picks.length || ""}`.trim()}</button>

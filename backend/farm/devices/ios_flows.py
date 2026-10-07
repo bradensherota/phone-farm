@@ -829,6 +829,24 @@ def ig_open_story_gallery(p: Phone) -> None:
     p.wait(name="gallery-header-title", what="story gallery", timeout=15)
 
 
+def ig_abandon_reel(p: Phone) -> bool:
+    """Back out of a reel composer (share screen or editor) without posting, so the phone is on
+    a tab screen for the next job: Back, discard the reel ("Start over"), close the gallery."""
+    p.log("info", "Discarding this reel so the next job starts clean")
+    for _ in range(6):
+        if p.exists(name="profile-tab", timeout=0.8):
+            return True
+        if p.tap_if(name="discard-reel-preview", what="Discard reel", timeout=0.8, pause=0.8):
+            p.tap_if(name="camera-discard-draft", what="Start over", timeout=4, pause=0.8)
+            continue
+        if p.tap_if(name="gallery-close-button", what="Close gallery", timeout=0.8, pause=0.8):
+            continue
+        if p.tap_if(name="BackButton", what="Back", timeout=0.8, pause=1.0):
+            continue
+        p.tap_if(name="Cancel", what="Cancel", timeout=0.5, pause=0.5)
+    return p.exists(name="profile-tab", timeout=1)
+
+
 def ig_turn_on_trial(p: Phone) -> None:
     """On the reel share screen: scroll down to Instagram's "Trial" row and switch it on.
     Not every account has the row; that's a give-up, not a retry."""
@@ -915,12 +933,17 @@ def ig_reel(p: Phone, spec: ActionSpec, trial: bool = False):
             if not p.tap_if(name="OK", what="OK (save caption)", timeout=3):
                 p.dismiss_keyboard()
         if trial:
-            ig_turn_on_trial(p)
+            try:
+                ig_turn_on_trial(p)
+            except FlowGiveUp:
+                ig_abandon_reel(p)  # leave Instagram clean for the next job, then give up
+                raise
 
     def post():
         if not p.exists(name="share-sheet-share-button", timeout=3):
             raise FlowError("Not on the reel share screen (run the 'pick' stage first)")
         if trial and not ig_trial_is_on(p):
+            ig_abandon_reel(p)
             raise FlowGiveUp("Trial is off on the share screen; not posting it as a normal reel")
         if (spec.extra or {}).get("dry_run"):
             p.log("info", "DRY RUN: stopping before 'Share'")

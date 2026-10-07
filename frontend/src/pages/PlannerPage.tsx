@@ -3,6 +3,7 @@ import type { Account, Device, Job } from "../lib/api";
 import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, TIME_SLOTS, ymd } from "../lib/api";
 import type { DayStart } from "../lib/api";
 import { Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
+import { inAlbum } from "../components/MediaPicker";
 import PlanDrawer from "../components/PlanDrawer";
 import AccountFill from "../components/AccountFill";
 
@@ -162,7 +163,7 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
               <td key={k}>
                 <div className={`cell ${k === today ? "today" : k < today ? "past" : ""}`} onClick={() => onPick(a, k)}>
                   {cellJobs.map((j) => (
-                    <div key={j.id} className={`chip ${j.status} ${j.media ? "" : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.last_error ? ` · ${j.last_error}` : ""}`}>
+                    <div key={j.id} className={`chip ${j.status} ${j.media ? (!inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? "noalbum" : "") : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.media && !inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? ` · not in ${device.queue_album || "the album"} yet: add it in Photos before it runs` : ""}${j.last_error ? ` · ${j.last_error}` : ""}`}>
                       {j.media && thumbUrl(j.media) ? <img className="th" src={thumbUrl(j.media)} alt="" /> : <span className="th" />}
                       <span className="t">{actionMeta(j.action).label}{j.group_origin_account_id !== null ? (j.group_origin_account_id === a.id ? " · all accounts" : " · ↳") : ""}{j.link_text ? ` · ${j.link_text}` : j.caption ? ` · ${j.caption.slice(0, 30)}` : ""}</span>
                     </div>

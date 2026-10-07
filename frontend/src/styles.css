@@ -309,3 +309,5 @@ a { color: inherit; text-decoration: none; }
 .fill-modal .modal-head { flex-wrap: wrap; }
 .roll-item .th { position: relative; }
 .roll-item .th video.hover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+.chip.noalbum { border-left-color: var(--amber); border-style: dashed; }
+.roll-item .cap .noalbum { font-size: 11px; color: var(--amber); margin-bottom: 5px; }

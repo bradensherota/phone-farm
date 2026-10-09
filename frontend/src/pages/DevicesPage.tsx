@@ -19,10 +19,10 @@ export default function DevicesPage() {
     try {
       const r = await api.startToday();
       const started = r.filter((x) => x.started > 0);
-      const skipped = r.filter((x) => x.started === 0 && x.note && !x.note.startsWith("nothing"));
+      const skipped = r.filter((x) => x.note && !x.note.startsWith("nothing"));
       const msg = [
         started.length ? `Started ${started.map((x) => `${x.name} (${x.started})`).join(", ")}` : "Nothing to start",
-        skipped.length ? `Skipped ${skipped.map((x) => `${x.name}: ${x.note}`).join("; ")}` : "",
+        skipped.length ? `${skipped.map((x) => `${x.name}: ${x.note}`).join("; ")}` : "",
       ].filter(Boolean).join(". ");
       toast(msg, started.length ? "ok" : "err");
       reload();

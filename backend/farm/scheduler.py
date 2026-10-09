@@ -61,7 +61,8 @@ def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
         .filter(cond)
         .order_by(Job.run_date, Job.sort_order, Job.id)
     )
-    return q.all()
+    from .blocks import lock_reason
+    return [j for j in q.all() if not lock_reason(s, j)]  # a locked job never runs on its own
 
 
 def next_run_for(job: Job, device: Device, s: Session | None = None) -> datetime:

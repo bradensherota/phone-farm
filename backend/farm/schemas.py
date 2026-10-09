@@ -146,6 +146,7 @@ class JobOut(ORM):
     origin_media_id: int | None = None
     last_stage: str = ""
     failed_stage: str = ""
+    locked: str = ""  # why this job can't run yet (blocks rule), "" when it can
     started_at: datetime | None
     finished_at: datetime | None
     next_run: datetime | None = None

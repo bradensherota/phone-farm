@@ -38,6 +38,9 @@ def job_out(j: Job, s: Session | None = None) -> JobOut:
                 out.group_origin_device = origin.device.name if origin.device else ""
     if j.media is None and j.origin_media_id is not None and j.status == JobStatus.scheduled:
         out.last_error = NO_COPY_MSG
+    if s is not None and j.status in (JobStatus.scheduled, JobStatus.failed):
+        from ..blocks import lock_reason
+        out.locked = lock_reason(s, j)
     out.handle = j.account.handle
     out.platform = j.account.platform.value
     out.device_name = j.account.device.name if j.account.device else ""
@@ -235,6 +238,10 @@ def run_now(job_id: int, s: Session = Depends(get_session)):
         raise HTTPException(404, "job not found")
     if j.status == JobStatus.running:
         raise HTTPException(409, "already running")
+    from ..blocks import lock_reason
+    reason = lock_reason(s, j)
+    if reason:
+        raise HTTPException(409, reason)
     j.status = JobStatus.scheduled
     j.attempts = 0
     j.last_error = ""
@@ -260,6 +267,10 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
         raise HTTPException(404, "job not found")
     if j.status == JobStatus.running:
         raise HTTPException(409, "already running")
+    from ..blocks import lock_reason
+    reason = lock_reason(s, j)
+    if reason:
+        raise HTTPException(409, reason)
     j.run_stage, j.run_mode = stage, mode
     j.last_error = ""
     if j.status in (JobStatus.failed, JobStatus.cancelled, JobStatus.done):

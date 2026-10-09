@@ -30,6 +30,8 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const ask = useConfirm();
   const { data: settings } = usePoll(api.settings, 60000);
   const ttStories = settings?.tiktok_stories === "true";
+  const requireBlocks = (settings?.require_blocks ?? "true") !== "false";
+  const blockDays = Math.max(1, Number(settings?.block_days || 4) || 4);
   const modes = useMemo(() => actionsFor(account.platform).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories]);
 
   const [items, setItems] = useState<Media[]>([]);
@@ -124,6 +126,36 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
     return m;
   }, [picks, plan]);
 
+  // blocks: per kind, the days it is (or will be) planned on; a day is "complete" when it sits in a
+  // run of at least `blockDays` consecutive days. New picks can't be saved until their run is complete.
+  const daysByKind = useMemo(() => {
+    const m = new Map<ActionKey, Set<string>>();
+    for (const a of modes) m.set(a.action, new Set());
+    for (const j of existing) if (j.status !== "cancelled" && m.has(j.action)) m.get(j.action)!.add(j.run_date);
+    for (const p of picks) { const v = plan.get(p.media.id); if (v) m.get(p.action)?.add(v.day); }
+    return m;
+  }, [existing, picks, plan, modes]);
+  const runLen = (days: Set<string>, d: string) => {
+    if (!days.has(d)) return 0;
+    let n = 1;
+    for (let x = addDays(parseYmd(d), -1); days.has(ymd(x)); x = addDays(x, -1)) n++;
+    for (let x = addDays(parseYmd(d), 1); days.has(ymd(x)); x = addDays(x, 1)) n++;
+    return n;
+  };
+  const complete = (action: ActionKey, d: string) => !requireBlocks || runLen(daysByKind.get(action) || new Set(), d) >= blockDays;
+  const shortfall = useMemo(() => {
+    const out = new Map<ActionKey, number>();
+    if (!requireBlocks) return out;
+    for (const a of modes) {
+      const first = picks.find((p) => p.action === a.action);
+      if (!first) continue;
+      const n = runLen(daysByKind.get(a.action) || new Set(), plan.get(first.media.id)!.day);
+      if (n < blockDays) out.set(a.action, blockDays - n);
+    }
+    return out;
+  }, [picks, plan, daysByKind, modes, requireBlocks, blockDays]);
+  const canSave = picks.length > 0 && shortfall.size === 0;
+
   const toggle = (m: Media) => {
     const cur = picks.find((p) => p.media.id === m.id);
     if (cur && cur.action === mode) { setPicks(picks.filter((p) => p.media.id !== m.id)); return; }
@@ -191,8 +223,9 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
 
         <div className="fill-bar">
           {modes.map((a) => (
-            <button key={a.action} className={`fill-mode ${slotOf(a.action)} ${mode === a.action ? "active" : ""}`} onClick={() => setMode(a.action)} title={`Tap clips to plan them as ${a.label.toLowerCase()}s, in the order you tap`}>
+            <button key={a.action} className={`fill-mode ${slotOf(a.action)} ${mode === a.action ? "active" : ""}`} onClick={() => setMode(a.action)} title={`Tap clips to plan them as ${a.label.toLowerCase()}s, in the order you tap${requireBlocks ? `. ${a.label}s run only in blocks of ${blockDays} days in a row` : ""}`}>
               {a.label} <span className="n">{count(a.action)}</span>
+              {shortfall.has(a.action) && <span className="need">pick {shortfall.get(a.action)} more</span>}
             </button>
           ))}
           {curSlot === "story" && (
@@ -226,7 +259,8 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                 const s = slotOf(a.action);
                 const isNew = newOn.get(d)?.has(a.action);
                 const has = taken.get(d)?.has(a.action);
-                return <span key={a.action} className={`l ${isNew ? s : has ? `${s} existing` : "none"}`}>{isNew || has ? LETTER[s] : "·"}</span>;
+                const hollow = (isNew || has) && !complete(a.action, d);
+                return <span key={a.action} className={`l ${isNew ? s : has ? `${s} existing` : "none"} ${hollow ? "hollow" : ""}`} title={hollow ? `${a.label}s on ${dayLabel(d)} are locked until this account has ${blockDays} days of them in a row` : undefined}>{isNew || has ? LETTER[s] : "·"}</span>;
               })}
             </span>
           ))}
@@ -287,12 +321,14 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
 
         <div className="modal-foot">
           <span className="dim small grow">
-            Tap a clip to plan it as the active kind; tap again to remove it. Each kind fills its own empty days from {dayLabel(fillFrom)} on. Dashed tiles are already planned.
+            {shortfall.size > 0
+              ? <b style={{ color: "var(--amber)" }}>{[...shortfall.entries()].map(([a, n]) => `${modes.find((m) => m.action === a)?.label}s: pick ${n} more`).join(" · ")} — {blockDays} days in a row unlock a kind.</b>
+              : <>Tap a clip to plan it as the active kind; tap again to remove it. Each kind fills its own empty days from {dayLabel(fillFrom)} on. Dashed tiles are already planned.{requireBlocks ? ` Hollow letters are locked until ${blockDays} days in a row.` : ""}</>}
             {(() => { const n = picks.filter((p) => !inAlbum(p.media, queueAlbum) && !inAlbum(p.media, storyAlbum)).length; return n ? <b style={{ color: "var(--amber)" }}> {n} pick{n === 1 ? " isn't" : "s aren't"} in {queueAlbum || "the album"} yet.</b> : null; })()}
           </span>
           <button className="btn ghost" onClick={close}>Cancel</button>
-          <button className="btn primary" disabled={saving || !picks.length} onClick={() => save(false)}>{saving ? "Saving…" : `Save ${picks.length || ""}`.trim()}</button>
-          {next && <button className="btn" disabled={saving} onClick={() => save(true)} title={`Save, then open @${next.account.handle}`}>{picks.length ? "Save & next" : "Next"} → @{next.account.handle}</button>}
+          <button className="btn primary" disabled={saving || !canSave} title={shortfall.size ? `Complete the block first: ${[...shortfall.entries()].map(([a, n]) => `${n} more ${modes.find((m) => m.action === a)?.label.toLowerCase()}(s)`).join(", ")}` : undefined} onClick={() => save(false)}>{saving ? "Saving…" : `Save ${picks.length || ""}`.trim()}</button>
+          {next && <button className="btn" disabled={saving || (picks.length > 0 && !canSave)} onClick={() => save(true)} title={`Save, then open @${next.account.handle}`}>{picks.length ? "Save & next" : "Next"} → @{next.account.handle}</button>}
         </div>
       </div>
     </div>

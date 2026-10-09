@@ -30,7 +30,7 @@ export default function PlannerPage() {
   const ask = useConfirm();
   const runDay = async (device: Device, day: string, count: number) => {
     if (!(await ask(`Start ${device.name}'s whole queue for ${day} now?\n${count} action(s) will run in order, real posts. The phone is woken first.`, "Run the day"))) return;
-    try { const r = await api.runDay(device.id, day); toast(`Started ${r.started} action(s) on ${device.name}`); reload(); }
+    try { const r = await api.runDay(device.id, day); toast(`Started ${r.started} action(s) on ${device.name}${r.skipped?.length ? `; ${r.skipped.length} locked (plan 4 days in a row)` : ""}`, r.started ? "ok" : "err"); reload(); }
     catch (e: any) { toast(e.message, "err"); }
   };
 
@@ -130,7 +130,9 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
         {days.map((d) => {
           const k = ymd(d);
           const v = startFor(device.id, k);
-          const pending = accounts.reduce((n, a) => n + (byCell.get(`${a.id}:${k}`) || []).filter((j) => j.status !== "done" && j.status !== "running").length, 0);
+          const cellJobs = accounts.flatMap((a) => (byCell.get(`${a.id}:${k}`) || []).filter((j) => j.status !== "done" && j.status !== "running"));
+          const pending = cellJobs.filter((j) => !j.locked).length;
+          const lockedJobs = cellJobs.filter((j) => j.locked);
           return (
             <td key={k} className="start-cell">
               {autoStart && (
@@ -142,6 +144,7 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
               {pending > 0 && device.kind !== "sim" && (
                 <button className="btn sm run-day" title="Run this day's whole queue on this phone now, in order" onClick={() => runDay(device, k, pending)}>▶ Run day ({pending})</button>
               )}
+              {lockedJobs.length > 0 && <span className="small locked-note" title={lockedJobs.map((j) => j.locked).join("\n")}>🔒 {lockedJobs.length} locked</span>}
             </td>
           );
         })}
@@ -163,7 +166,8 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
               <td key={k}>
                 <div className={`cell ${k === today ? "today" : k < today ? "past" : ""}`} onClick={() => onPick(a, k)}>
                   {cellJobs.map((j) => (
-                    <div key={j.id} className={`chip ${j.status} ${j.media ? (!inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? "noalbum" : "") : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.media && !inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? ` · not in ${device.queue_album || "the album"} yet: add it in Photos before it runs` : ""}${j.last_error ? ` · ${j.last_error}` : ""}`}>
+                    <div key={j.id} className={`chip ${j.status} ${j.locked ? "locked" : ""} ${j.media ? (!inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? "noalbum" : "") : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.locked ? ` · ${j.locked}` : ""}${j.media && !inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? ` · not in ${device.queue_album || "the album"} yet: add it in Photos before it runs` : ""}${j.last_error ? ` · ${j.last_error}` : ""}`}>
+                      {j.locked && <span className="lock" title={j.locked}>🔒</span>}
                       {j.media && thumbUrl(j.media) ? <img className="th" src={thumbUrl(j.media)} alt="" /> : <span className="th" />}
                       <span className="t">{actionMeta(j.action).label}{j.group_origin_account_id !== null ? (j.group_origin_account_id === a.id ? " · all accounts" : " · ↳") : ""}{j.link_text ? ` · ${j.link_text}` : j.caption ? ` · ${j.caption.slice(0, 30)}` : ""}</span>
                     </div>

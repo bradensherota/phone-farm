@@ -157,17 +157,27 @@ def start_today(s: Session = Depends(get_session)):
         if not connected:
             out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": False, "note": "not connected; plug it in and unlock it, then press again"})
             continue
+        from ..blocks import lock_reason
         d.paused = False
+        skipped: list[str] = []
+        started = 0
         for j in jobs:
+            reason = lock_reason(s, j)
+            if reason:
+                skipped.append(reason)
+                continue
             j.status = JobStatus.scheduled
             j.attempts = 0
             j.last_error = ""
             j.last_stage, j.failed_stage = "", ""
             j.run_at = now
             s.add(JobLog(job_id=j.id, level="info", message="Started by 'Start today'"))
+            started += 1
         s.commit()
-        runner.kick(d.id)
-        out.append({"device_id": d.id, "name": d.name, "started": len(jobs), "connected": True, "note": ""})
+        if started:
+            runner.kick(d.id)
+        note = f"{len(skipped)} locked (plan 4 days in a row)" if skipped else ""
+        out.append({"device_id": d.id, "name": d.name, "started": started, "connected": True, "note": note, "skipped": skipped})
     return out
 
 
@@ -185,15 +195,24 @@ def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
         .order_by(Job.sort_order, Job.id)
         .all()
     )
+    from ..blocks import lock_reason
     now = datetime.now()
+    skipped: list[str] = []
+    started = 0
     for j in jobs:
+        reason = lock_reason(s, j)
+        if reason:
+            skipped.append(reason)
+            continue
         j.status = JobStatus.scheduled
         j.attempts = 0
         j.last_error = ""
         j.run_at = now
+        started += 1
     s.commit()
-    runner.kick(device_id)
-    return {"started": len(jobs)}
+    if started:
+        runner.kick(device_id)
+    return {"started": started, "skipped": skipped}
 
 
 @router.post("/{device_id}/stop")

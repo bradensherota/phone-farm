@@ -14,6 +14,8 @@ const FIELDS: { key: string; label: string; help: string; type: "bool" | "number
   { key: "queue_auto", label: "App manages the queue album", help: "Off: you add each planned clip to the phone's queue album in Photos yourself and remove it after. On: the app fills the album before the day starts and empties it after posting (slower and less reliable).", type: "bool" },
   { key: "dry_run", label: "Dry run", help: "Every flow runs all the way to the final Post / Share button and stops there without posting. Turn off for real posting.", type: "bool" },
   { key: "pace_multiplier", label: "Pace multiplier", help: "Multiplies every phone's gap between actions. 1.0 = as configured per phone. Use 0.05 while testing simulated phones.", type: "number" },
+  { key: "require_blocks", label: "Require blocks of days", help: "On: a kind of post on an account (reels, trial reels, stories) only runs when that account has it planned on the block length of consecutive days. Plan four days of stories in a row and those stories unlock; a kind you don't plan isn't required. The fill screen won't save a partial block.", type: "bool" },
+  { key: "block_days", label: "Block length (days)", help: "How many consecutive days of a kind unlock it. Default 4.", type: "number" },
   { key: "max_attempts", label: "Max attempts", help: "How many tries before an action is marked failed (retries wait ~3 minutes).", type: "number" },
   { key: "sim_step_seconds", label: "Simulated step seconds", help: "How long each fake tap takes on simulated phones.", type: "number" },
   { key: "sim_failure_rate", label: "Simulated failure rate", help: "0 to 1. Inject random failures on simulated phones to test retries and the activity view.", type: "number" },

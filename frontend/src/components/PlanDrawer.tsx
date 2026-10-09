@@ -138,6 +138,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                   </label>
                   <h3>{a.label} <span className="dim small">· {a.media === "video" ? "video" : "photo or video"}{a.link ? " + link" : ""}</span></h3>
                   {d.status && <Pill kind={d.status}>{d.status}</Pill>}
+                  {d.job?.locked && <span className="small" style={{ color: "var(--amber)" }} title={d.job.locked}>🔒 {d.job.locked}</span>}
                   {d.job && <button className="btn sm ghost" onClick={() => setDetail(d.job!)}>Details</button>}
                 </div>
                 {d.enabled && d.mirroredFrom && (

@@ -472,6 +472,15 @@ class IOSDriver(Driver):
     _PHOTOS_FILES = ("Photos.sqlite", "Photos.sqlite-wal", "Photos.sqlite-shm")
 
     def _list_from_photos_db(self, force: bool = False) -> list[RollItem]:
+        # one copy at a time per phone: callers that arrive while a copy is running wait for it
+        # and then find the index unchanged, instead of copying a 1 GB file three times at once
+        lock = getattr(self, "_photos_lock", None)
+        if lock is None:
+            lock = self._photos_lock = threading.Lock()
+        with lock:
+            return self._list_from_photos_db_locked(force=force)
+
+    def _list_from_photos_db_locked(self, force: bool = False) -> list[RollItem]:
         import sqlite3
 
         async def signature(afc):
@@ -507,7 +516,8 @@ class IOSDriver(Driver):
 
         t0 = time.time()
         sig, files = self._afc(pull)
-        log.info("%s: Photos index copied (%.0f MB in %.1fs)", self.name, sum(len(b) for b in files.values()) / 1e6, time.time() - t0)
+        self._last_index_copy_s = time.time() - t0
+        log.info("%s: Photos index copied (%.0f MB in %.1fs)", self.name, sum(len(b) for b in files.values()) / 1e6, self._last_index_copy_s)
         with tempfile.TemporaryDirectory() as td:
             for name, data in files.items():
                 (Path(td) / name).write_bytes(data)

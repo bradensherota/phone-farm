@@ -160,7 +160,10 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
                 for did in usb - busy:
                     # keep the planner honest while the phone sits there: re-read the albums every
                     # few minutes (a stat check unless the Photos index actually changed)
-                    if time.time() - last_album_read.get(did, 0) >= ALBUM_REREAD_S:
+                    drv = manager.driver(did)
+                    heavy = float(getattr(drv, "_last_index_copy_s", 0) or 0)
+                    every = max(ALBUM_REREAD_S, 20 * heavy)  # a 47s copy → every ~16 min; a 2s copy → every 3 min
+                    if time.time() - last_album_read.get(did, 0) >= every:
                         last_album_read[did] = time.time()
                         try:
                             manager.sync_media(did, albums_only=True)

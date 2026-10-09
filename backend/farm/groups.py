@@ -15,10 +15,12 @@ def find_twin_media(s: Session, device_id: str, origin: MediaItem) -> MediaItem 
     length). Prefers a copy that is already in the phone's queue or story album."""
     if origin is None or origin.created_at is None:
         return None
+    from datetime import timedelta
+    lo, hi = origin.created_at - timedelta(seconds=1), origin.created_at + timedelta(seconds=1)
     cands = (
         s.query(MediaItem)
         .filter(MediaItem.device_id == device_id, MediaItem.present.is_(True),
-                MediaItem.created_at == origin.created_at, MediaItem.kind == origin.kind)
+                MediaItem.created_at >= lo, MediaItem.created_at <= hi, MediaItem.kind == origin.kind)
         .all()
     )
     want = float(origin.duration_s or 0)
@@ -36,21 +38,38 @@ def find_twin_media(s: Session, device_id: str, origin: MediaItem) -> MediaItem 
 
 
 def resolve_pending(s: Session, device_id: str) -> int:
-    """Fill in the media of this phone's story copies that are still waiting for the clip to
-    arrive (after a sync). Returns how many were filled."""
+    """After a sync: fill in the media of this phone's story copies still waiting for their clip,
+    and re-point any pending job whose clip isn't in the album at an identical copy that is.
+    Returns how many jobs changed."""
     n = 0
+    dev = s.get(Device, device_id)
+    albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""} if dev is not None else set()
+
+    def in_album(m: MediaItem) -> bool:
+        return any(t.strip() in albums for t in (m.albums or "").split("|") if t)
+
     rows = (
         s.query(Job)
-        .filter(Job.device_id == device_id, Job.media_id.is_(None), Job.origin_media_id.isnot(None),
-                Job.status.in_([JobStatus.scheduled, JobStatus.failed]))
+        .filter(Job.device_id == device_id, Job.status.in_([JobStatus.scheduled, JobStatus.failed]))
         .all()
     )
     for job in rows:
-        origin = s.get(MediaItem, job.origin_media_id)
-        twin = find_twin_media(s, device_id, origin) if origin is not None else None
-        if twin is not None:
+        if job.media_id is None:
+            if job.origin_media_id is None:
+                continue
+            origin = s.get(MediaItem, job.origin_media_id)
+            twin = find_twin_media(s, device_id, origin) if origin is not None else None
+            if twin is not None:
+                job.media_id = twin.id
+                if job.status == JobStatus.failed and job.last_error == NO_COPY_MSG:
+                    job.status, job.attempts, job.last_error = JobStatus.scheduled, 0, ""
+                n += 1
+            continue
+        cur = s.get(MediaItem, job.media_id)
+        if cur is None or in_album(cur) or not albums:
+            continue
+        twin = find_twin_media(s, device_id, cur)
+        if twin is not None and twin.id != cur.id and in_album(twin):
             job.media_id = twin.id
-            if job.status == JobStatus.failed and job.last_error == NO_COPY_MSG:
-                job.status, job.attempts, job.last_error = JobStatus.scheduled, 0, ""
             n += 1
     return n

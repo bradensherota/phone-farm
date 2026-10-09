@@ -26,6 +26,7 @@ HOVER_DIR = DATA_DIR / "hover"
 PREVIEW_DIR = DATA_DIR / "previews"  # the 720p click-to-watch copies; a free local source
 SKIP = "skip"  # hover_path value for a clip that can't be done (too big, unreadable)
 MAX_SECONDS = 20
+ALBUM_REREAD_S = 180  # idle phones on the cable: re-read the albums this often
 
 
 def hover_path_for(device_id: str, filename: str) -> Path:
@@ -148,6 +149,7 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
                 log.info("hover clips made from cached previews: %d", n)
         except Exception:
             log.exception("hover warm-up from previews failed")
+        last_album_read: dict[str, float] = {}
         while True:
             try:
                 try:
@@ -156,6 +158,16 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
                     usb = set()
                 busy = manager.busy_devices()
                 for did in usb - busy:
+                    # keep the planner honest while the phone sits there: re-read the albums every
+                    # few minutes (a stat check unless the Photos index actually changed)
+                    if time.time() - last_album_read.get(did, 0) >= ALBUM_REREAD_S:
+                        last_album_read[did] = time.time()
+                        try:
+                            manager.sync_media(did, albums_only=True)
+                        except Exception as e:
+                            log.warning("%s: idle album re-read failed: %s", did, e)
+                    if did in manager.busy_devices():
+                        continue
                     n = warm_device(manager, did)
                     if n:
                         log.info("%s: %d hover clip(s) made", did, n)

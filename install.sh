@@ -38,9 +38,16 @@ if [ -f "$ROOT/data/farm.db" ]; then
   REAL_PHONES="$(sqlite3 "$ROOT/data/farm.db" "select count(*) from devices where kind!='sim'" 2>/dev/null || echo 0)"
 fi
 if [ -f "$AGENTS/com.phonefarm.server.plist" ] && { [ ! -f "$ROOT/data/farm.db" ] || [ "${REAL_PHONES:-0}" = "0" ]; }; then
+  # the previous copy is whichever folder actually holds a real phone: the one the server last
+  # ran from, or any phone-farm* folder next to this one
   OLD_BACKEND="$(plutil -extract WorkingDirectory raw -o - "$AGENTS/com.phonefarm.server.plist" 2>/dev/null || true)"
-  OLD_ROOT="$(dirname "$OLD_BACKEND" 2>/dev/null || true)"
-  if [ -n "$OLD_ROOT" ] && [ "$OLD_ROOT" != "$ROOT" ] && [ -f "$OLD_ROOT/data/farm.db" ]; then
+  OLD_ROOT=""
+  for cand in "$(dirname "$OLD_BACKEND" 2>/dev/null)" "$(dirname "$ROOT")"/phone-farm*; do
+    [ -n "$cand" ] && [ -d "$cand" ] && [ "$cand" != "$ROOT" ] && [ -f "$cand/data/farm.db" ] || continue
+    n="$(sqlite3 "$cand/data/farm.db" "select count(*) from devices where kind!='sim'" 2>/dev/null || echo 0)"
+    if [ "${n:-0}" != "0" ]; then OLD_ROOT="$cand"; break; fi
+  done
+  if [ -n "$OLD_ROOT" ]; then
     echo "Moving your data from the previous copy ($OLD_ROOT/data) into this one…"
     launchctl bootout "gui/$(id -u)" "$AGENTS/com.phonefarm.server.plist" >/dev/null 2>&1 || true
     [ -d "$ROOT/data" ] && mv "$ROOT/data" "$ROOT/data.fresh-$(date +%H%M%S)"

@@ -8,6 +8,7 @@ rm -f "$OUT"
 STAGE="$(mktemp -d)"; mkdir -p "$STAGE/phone-farm"
 rsync -a --exclude "data" --exclude "backend/.venv" --exclude "frontend/node_modules" --exclude ".git" --exclude "sim_media" \
       --exclude "__pycache__" --exclude "*.pyc" --exclude ".DS_Store" --exclude "tools/WebDriverAgent" ./ "$STAGE/phone-farm/"
+echo "$(date +%Y-%m-%d) $(git rev-parse --short HEAD 2>/dev/null || echo zip)" > "$STAGE/phone-farm/VERSION"
 (cd "$STAGE" && zip -qr "$OUT" phone-farm)
 rm -rf "$STAGE"
 echo "Ready: $OUT ($(du -h "$OUT" | cut -f1)). Send it; it unpacks to a 'phone-farm' folder; they double-click Install.command (or run ./install.sh)"

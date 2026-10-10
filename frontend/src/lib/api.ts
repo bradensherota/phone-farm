@@ -216,7 +216,7 @@ export const api = {
   settings: () => req<Record<string, string>>("/settings"),
   putSettings: (body: Record<string, string>) => req<Record<string, string>>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   applyDefaultLink: (platform: "instagram" | "tiktok") => req<{ link: string; accounts: number; pending_stories: number }>(`/settings/apply-link?platform=${platform}`, { method: "POST" }),
-  runner: () => req<{ enabled: boolean; busy_devices: string[]; current: Record<string, number> }>("/runner"),
+  runner: () => req<{ enabled: boolean; busy_devices: string[]; current: Record<string, number>; version: string }>("/runner"),
 };
 
 export interface DayStart { device_id: string; run_date: string; start: string }

@@ -95,12 +95,24 @@ def apply_default_link(platform: str, s: Session = Depends(get_session)):
     return {"link": link, "accounts": n_acc, "pending_stories": n_jobs}
 
 
+def _app_version() -> str:
+    try:
+        from ..config import ROOT
+        v = (ROOT / "VERSION").read_text().strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return "dev"
+
+
 @router.get("/runner", response_model=RunnerState)
 def runner_state():
     return RunnerState(
         enabled=settings_mod.as_bool(settings_mod.get("runner_enabled", "true")),
         busy_devices=sorted(runner.busy),
         current=dict(runner.current),
+        version=_app_version(),
     )
 
 

@@ -33,13 +33,17 @@ swiftc -O -o "$HOME/PhoneFarm/ocr" backend/tools/ocr.swift
 # 5. Updating from a previous copy of the app in another folder? Bring its data along
 #    (phones, accounts, plans, thumbnails), so an update never starts from scratch.
 AGENTS="$HOME/Library/LaunchAgents"; mkdir -p "$AGENTS"
-if [ -f "$AGENTS/com.phonefarm.server.plist" ] && [ ! -f "$ROOT/data/farm.db" ]; then
+REAL_PHONES=0
+if [ -f "$ROOT/data/farm.db" ]; then
+  REAL_PHONES="$(sqlite3 "$ROOT/data/farm.db" "select count(*) from devices where kind!='sim'" 2>/dev/null || echo 0)"
+fi
+if [ -f "$AGENTS/com.phonefarm.server.plist" ] && { [ ! -f "$ROOT/data/farm.db" ] || [ "${REAL_PHONES:-0}" = "0" ]; }; then
   OLD_BACKEND="$(plutil -extract WorkingDirectory raw -o - "$AGENTS/com.phonefarm.server.plist" 2>/dev/null || true)"
   OLD_ROOT="$(dirname "$OLD_BACKEND" 2>/dev/null || true)"
   if [ -n "$OLD_ROOT" ] && [ "$OLD_ROOT" != "$ROOT" ] && [ -f "$OLD_ROOT/data/farm.db" ]; then
     echo "Moving your data from the previous copy ($OLD_ROOT/data) into this one…"
     launchctl bootout "gui/$(id -u)" "$AGENTS/com.phonefarm.server.plist" >/dev/null 2>&1 || true
-    rm -rf "$ROOT/data"
+    [ -d "$ROOT/data" ] && mv "$ROOT/data" "$ROOT/data.fresh-$(date +%H%M%S)"
     mv "$OLD_ROOT/data" "$ROOT/data"
     echo "Done. The old folder ($OLD_ROOT) can be deleted."
   fi

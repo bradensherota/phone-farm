@@ -66,6 +66,9 @@ class DeviceManager:
 
     # ---- bootstrap -------------------------------------------------------
     def seed_if_empty(self) -> None:
+        import os
+        if os.environ.get("PHONEFARM_SEED_SIMS") != "1":
+            return  # sample (simulated) phones are for development only; a real install starts empty
         with session_scope() as s:
             if s.query(Device).count():
                 return

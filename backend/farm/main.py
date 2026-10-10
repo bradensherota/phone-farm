@@ -23,6 +23,17 @@ async def lifespan(app: FastAPI):
     init_db()
     settings_mod.ensure_defaults()
     manager.seed_if_empty()
+    try:
+        from .db import session_scope
+        from .models import Device
+        with session_scope() as s:
+            sims = s.query(Device).filter(Device.kind == "sim").all()
+            if sims and not __import__("os").environ.get("PHONEFARM_SEED_SIMS"):
+                for d in sims:
+                    s.delete(d)
+                log.info("removed %d sample (simulated) phones", len(sims))
+    except Exception:
+        log.exception("removing sample phones")
     manager.load()
     # Thumbnail generation can take a while on a big roll; don't hold up the UI for it.
     sync_task = asyncio.create_task(asyncio.to_thread(manager.sync_all), name="initial-sync")

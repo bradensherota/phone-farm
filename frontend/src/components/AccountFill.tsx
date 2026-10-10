@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd } from "../lib/api";
 import { PlatformIcon, useConfirm, usePoll, useToast } from "./common";
-import { HoverThumb, inAlbum } from "./MediaPicker";
+import { HoverSoundToggle, HoverThumb, hoverSoundOn, inAlbum } from "./MediaPicker";
 
 // Fill an account's coming days in one sitting: pick clips in the order they should go out,
 // type the caption under each, and every pick lands on the next day that has nothing of its
@@ -44,6 +44,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const [allPhones, setAllPhones] = useState(false);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [hoverId, setHoverId] = useState<number | null>(null);
+  const [sound, setSound] = useState(hoverSoundOn());
   const [lastAdded, setLastAdded] = useState<number | null>(null);
   const [batchLink, setBatchLink] = useState("");
   const [saving, setSaving] = useState(false);
@@ -217,6 +218,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
           </div>
           {orderNote && <span className="small dim">{orderNote}</span>}
           {videosOnly && <span className="pill">videos only</span>}
+          <HoverSoundToggle value={sound} onChange={setSound} />
           <button className="btn sm" onClick={sync} disabled={syncing} title="Re-read the phone's albums (fast; no thumbnails)">{syncing ? "Syncing…" : "Sync albums"}</button>
           <button className="btn sm ghost" onClick={close}>✕</button>
         </div>
@@ -284,7 +286,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                         ? <video src={`/api/media/${m.id}/preview`} autoPlay controls playsInline onClick={(e) => e.stopPropagation()} />
                         : <img className="full" src={`/api/media/${m.id}/preview`} alt="" onClick={(e) => e.stopPropagation()} />
                     ) : (
-                      <HoverThumb media={m} playing={hoverId === m.id && !pick} />
+                      <HoverThumb media={m} playing={hoverId === m.id && !pick} sound={sound} />
                     )}
                   </div>
                   <button className="badge" title={previewId === m.id ? "Stop the preview" : "Preview it right here"} onClick={(e) => { e.stopPropagation(); setPreviewId(previewId === m.id ? null : m.id); }}>

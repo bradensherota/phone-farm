@@ -29,6 +29,31 @@ MAX_SECONDS = 20
 ALBUM_REREAD_S = 180  # idle phones on the cable: re-read the albums this often
 
 
+HOVER_FORMAT = "v2-sound"  # bump when the clip format changes: old clips are dropped and remade
+
+
+def ensure_format() -> None:
+    """Drop hover clips made in an older format so the warmer remakes them."""
+    marker = HOVER_DIR / f".{HOVER_FORMAT}"
+    if marker.exists():
+        return
+    from .db import session_scope
+    n = 0
+    with session_scope() as s:
+        for r in s.query(MediaItem).filter(MediaItem.hover_path != "").all():
+            if r.hover_path != SKIP:
+                try:
+                    Path(r.hover_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            r.hover_path = ""
+            n += 1
+    HOVER_DIR.mkdir(parents=True, exist_ok=True)
+    marker.write_text(HOVER_FORMAT)
+    if n:
+        log.info("hover clips: format changed to %s; %d will be remade", HOVER_FORMAT, n)
+
+
 def hover_path_for(device_id: str, filename: str) -> Path:
     key = hashlib.sha1(f"{device_id}:{filename}".encode()).hexdigest()[:16]
     return HOVER_DIR / device_id / f"{key}.mp4"
@@ -43,7 +68,8 @@ def make_hover(src: Path, out: Path) -> bool:
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".part.mp4")
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-t", str(MAX_SECONDS),
-           "-vf", "scale=320:-2,fps=15", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
+           "-vf", "scale=320:-2,fps=15", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
+           "-c:a", "aac", "-b:a", "48k", "-ac", "1",  # small mono sound track; the browser plays it at 1.5x with the picture
            "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", str(tmp)]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=300)
@@ -151,6 +177,10 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
 
     def loop():
         time.sleep(15)
+        try:
+            ensure_format()
+        except Exception:
+            log.exception("hover format check")
         try:
             n = warm_from_local_previews()
             if n:

@@ -15,22 +15,31 @@ interface Props {
 export const inAlbum = (m: Media, album: string) =>
   !!album && (m.albums || "").split("|").map((t) => t.trim()).includes(album.trim());
 
-/** The thumbnail; while `playing`, the silent hover clip instead (1.5x, looping, no sound). */
-export function HoverThumb({ media, playing }: { media: Media; playing: boolean }) {
+// hover sound: on by default, remembered per browser
+export function hoverSoundOn(): boolean { try { return localStorage.getItem("hoverSound") !== "off"; } catch { return true; } }
+export function setHoverSound(on: boolean) { try { localStorage.setItem("hoverSound", on ? "on" : "off"); } catch {} }
+
+export function HoverSoundToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return <button className="btn sm ghost" title={value ? "Hover previews play with sound. Click to mute." : "Hover previews are muted. Click for sound."} onClick={() => { setHoverSound(!value); onChange(!value); }}>{value ? "🔊 sound" : "🔇 muted"}</button>;
+}
+
+/** The thumbnail; while `playing`, the small hover clip on top of it (1.5x, looping, sound optional). */
+export function HoverThumb({ media, playing, sound = true }: { media: Media; playing: boolean; sound?: boolean }) {
   // the thumbnail stays mounted and the clip sits on top of it (no pointer events), so a click
   // never lands on an element that is being swapped out from under the mouse
+  const rate = (el: HTMLVideoElement) => { el.playbackRate = HOVER_RATE; (el as any).preservesPitch = true; };
   return (
     <>
       <img src={thumbUrl(media)} alt="" loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
       {playing && media.has_hover && (
-        <video className="hover" src={hoverUrl(media)} muted loop playsInline autoPlay preload="auto"
-               ref={(el) => { if (el) el.playbackRate = HOVER_RATE; }} onLoadedMetadata={(e) => { e.currentTarget.playbackRate = HOVER_RATE; }} />
+        <video className="hover" src={hoverUrl(media)} muted={!sound} loop playsInline autoPlay preload="auto"
+               ref={(el) => { if (el) rate(el); }} onLoadedMetadata={(e) => rate(e.currentTarget)} />
       )}
     </>
   );
 }
 
-export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: Media[]; selectedId: number | null; onSelect: (m: Media) => void; storyAlbum?: string }) {
+export function RollGrid({ items, selectedId, onSelect, storyAlbum, sound = true }: { items: Media[]; selectedId: number | null; onSelect: (m: Media) => void; storyAlbum?: string; sound?: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
   if (!items.length) return <div className="empty">Nothing here yet. AirDrop content to the phone, then Sync.</div>;
   return (
@@ -39,7 +48,7 @@ export function RollGrid({ items, selectedId, onSelect, storyAlbum }: { items: M
         <div key={m.id} className={`roll-item ${selectedId === m.id ? "sel" : ""} ${m.posted_at ? "posted" : ""}`} onClick={() => onSelect(m)}
              onMouseEnter={() => setHover(m.id)} onMouseLeave={() => setHover((h) => (h === m.id ? null : h))}
              title={`${m.filename}${m.albums ? `\nAlbums: ${m.albums.split("|").join(", ")}` : ""}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
-          <div className="th"><HoverThumb media={m} playing={hover === m.id && selectedId !== m.id} /></div>
+          <div className="th"><HoverThumb media={m} playing={hover === m.id && selectedId !== m.id} sound={sound} /></div>
           <span className="badge">{m.kind === "video" ? `▶ ${fmtDuration(m.duration_s)}` : "photo"}</span>
           {m.index !== null && <span className="idx">#{m.index + 1}</span>}
           {storyAlbum && inAlbum(m, storyAlbum) && <span className="badge album">★ {storyAlbum}</span>}
@@ -99,6 +108,7 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
   const [syncing, setSyncing] = useState(false);
   const [preview, setPreview] = useState<Media | null>(null);
+  const [sound, setSound] = useState(hoverSoundOn());
   const toast = useToast();
 
   useEffect(() => {
@@ -154,12 +164,13 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
             </select>
           )}
           {kind === "video" && <span className="pill">videos only</span>}
+          <HoverSoundToggle value={sound} onChange={setSound} />
           <button className="btn sm" onClick={sync} disabled={syncing} title="Re-read the phone's albums (fast; no thumbnails)">{syncing ? "Syncing…" : "Sync albums"}</button>
           <button className="btn sm ghost" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           {shown.length === 0 && <div className="empty">Nothing from "{activeAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
-          {shown.length > 0 && <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} />}
+          {shown.length > 0 && <RollGrid items={shown} selectedId={selectedId} onSelect={(m) => setPreview(m)} storyAlbum={storyAlbum} sound={sound} />}
         </div>
         <div className="modal-foot">
           <span className="dim small grow">

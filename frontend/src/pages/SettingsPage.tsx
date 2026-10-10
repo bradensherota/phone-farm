@@ -1,6 +1,38 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { useToast } from "../components/common";
+import { useConfirm, usePoll, useToast } from "../components/common";
+
+function UpdatesCard() {
+  const toast = useToast();
+  const ask = useConfirm();
+  const { data: runner } = usePoll(api.runner, 5000);
+  const [check, setCheck] = useState<{ installed_from_git: boolean; local: string; remote: string; behind: boolean; error: string } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [updating, setUpdating] = useState<string | null>(null);  // version at the time Update was pressed
+  const doCheck = async () => { setChecking(true); try { setCheck(await api.updateCheck()); } catch (e: any) { toast(e.message, "err"); } finally { setChecking(false); } };
+  useEffect(() => { doCheck(); }, []);
+  useEffect(() => { if (updating && runner?.version && runner.version !== updating) { setUpdating(null); toast(`Updated to ${runner.version}`); doCheck(); } }, [runner?.version]);
+  const update = async () => {
+    if (!(await ask("Update Phone Farm from GitHub now? The app restarts itself; takes a minute or two. Nothing is lost.", "Update"))) return;
+    try { await api.updateNow(); setUpdating(runner?.version || "?"); toast("Updating… the page will come back on its own"); }
+    catch (e: any) { toast(e.message, "err"); }
+  };
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-body">
+        <div className="row" style={{ marginBottom: 6 }}>
+          <b className="grow">Updates</b>
+          <span className="small dim">installed: v{runner?.version || "…"}</span>
+          <button className="btn sm" onClick={doCheck} disabled={checking}>{checking ? "Checking…" : "Check for updates"}</button>
+          <button className="btn sm primary" onClick={update} disabled={!check?.installed_from_git || !!updating || !!(runner && runner.busy_devices.length)} title={runner?.busy_devices.length ? "A phone is posting; update when it's idle" : "Pull the latest from GitHub and reinstall"}>{updating ? "Updating…" : "Update now"}</button>
+        </div>
+        <div className="small dim">
+          {check === null ? "Checking GitHub…" : check.error ? check.error : check.behind ? `A newer version is on GitHub (${check.remote}). Press Update now.` : "You're on the latest version."}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const FIELDS: { key: string; label: string; help: string; type: "bool" | "number" | "text" }[] = [
   { key: "runner_enabled", label: "Runner enabled", help: "Master switch. Off = nothing posts anywhere.", type: "bool" },
@@ -44,6 +76,7 @@ export default function SettingsPage() {
         <div><h1>Settings</h1><div className="sub">Local to this Mac. Stored in data/farm.db.</div></div>
         <button className="btn primary" disabled={!dirty} onClick={save} title="Switches save on their own; this saves the number fields">Save numbers</button>
       </div>
+      <UpdatesCard />
       <div className="settings-grid">
         {FIELDS.map((f) => (
           <div className="card" key={f.key}>

@@ -6,31 +6,40 @@ one action at a time, the way a person holding the phone would.
 
 ## Setup on a new Mac
 
-Everything runs on your Mac; the phones plug in over USB. You need: a Mac with **Xcode**
-(App Store, open it once), **Homebrew**, and an **Apple ID** signed into Xcode (Settings →
-Accounts; a free one is fine, the app re-signs the phone runner by itself every 7 days).
+You need: a Mac with **Xcode** (App Store, open it once), **Homebrew**, an **Apple ID** signed into
+Xcode (Settings → Accounts; a free one is fine, the app re-signs the phone runner itself every
+7 days), and a **GitHub account** that has been invited to this repository.
 
-Double-click **Install.command** in the folder (first time, if macOS objects: right-click it → Open).
-Or in Terminal, inside the folder: `./install.sh`.
+Paste into Terminal, one line at a time:
 
-That installs the Python and UI pieces, compiles the OCR helper, and sets the server to run
-whenever you're logged in, at http://localhost:8765. To get a Dock icon, open that address in
-Chrome and use menu ⋮ → Cast, save and share → Install page as app. (Safari's "Add to Dock"
-freezes in the background; use Chrome.)
+```bash
+brew install gh && gh auth login --hostname github.com --git-protocol https --web
+```
 
-Then, per phone: Developer Mode on (Settings → Privacy & Security), Auto-Lock Never, plug in
-over USB, tap Trust, press **Find phones** in the app. The first connect builds and installs
-the runner for that phone (2-5 min, phone unlocked). On a Mac that has never signed an app,
-Xcode first needs to create a certificate: open `~/PhoneFarm/WebDriverAgent/WebDriverAgent.xcodeproj`,
-select the WebDriverAgentRunner target → Signing & Capabilities → tick "Automatically manage
-signing" → pick your team (Personal Team is fine), then press Rebuild runner on the phone's page.
-If the phone shows "Untrusted Developer",
-trust it under Settings → General → VPN & Device Management and press Connect. Then on the
-phone's page add your accounts, and in Photos make a **Farm Queue** album for the clips you
-plan to post. Plan the week in the planner, press **Run day** in the morning.
+```bash
+gh repo clone bradensherota/phone-farm ~/phone-farm && cd ~/phone-farm && ./install.sh
+```
 
-Updating: unzip the new version anywhere and run its Install.command; it moves your `data/` over from the previous copy by itself. If macOS blocks Install.command: System Settings → Privacy & Security → scroll down → "Open Anyway", or run `./install.sh` in Terminal.
-`./uninstall.sh` stops the server; `tools/package.sh` makes a zip to hand to someone else.
+The first signs you into GitHub (press Enter when it asks, approve in the browser). The second
+downloads the app into `~/phone-farm`, installs it, and sets the server to run whenever you're
+logged in, at http://localhost:8765. For a Dock icon, open that address in Chrome and use
+menu ⋮ → Cast, save and share → Install page as app.
+
+**Updating:** Settings → Updates → **Update now**. It pulls the latest from GitHub, reinstalls and
+restarts; your data stays where it is. The installed version shows at the bottom-left of the sidebar.
+(`./update.sh` in the folder does the same from Terminal.)
+
+Per phone: Developer Mode on (Settings → Privacy & Security), Auto-Lock Never, plug in over
+USB, tap Trust, press **Find phones** in the app. The first connect builds and installs the runner
+for that phone (2-5 min, phone unlocked). On a Mac that has never signed an app, Xcode first needs
+to create a certificate: open `~/PhoneFarm/WebDriverAgent/WebDriverAgent.xcodeproj`, select the
+WebDriverAgentRunner target → Signing & Capabilities → tick "Automatically manage signing" → pick
+your team, then press Rebuild runner on the phone's page. If the phone shows "Untrusted Developer",
+trust it under Settings → General → VPN & Device Management and press Connect. Then on the phone's
+page add your accounts, and in Photos make a **Farm Queue** album for the clips you plan to post.
+Plan the week in the planner, press **Run day** in the morning.
+
+`./uninstall.sh` stops the server. `tools/package.sh` still makes a zip for someone without GitHub.
 
 For development: `./run.sh --server` runs the API only; `cd frontend && npm run dev` serves
 the UI with hot reload, proxying `/api` to it.

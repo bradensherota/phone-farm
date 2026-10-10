@@ -96,14 +96,53 @@ def apply_default_link(platform: str, s: Session = Depends(get_session)):
 
 
 def _app_version() -> str:
+    from ..config import ROOT
     try:
-        from ..config import ROOT
         v = (ROOT / "VERSION").read_text().strip()
         if v:
             return v
     except Exception:
         pass
+    if (ROOT / ".git").exists():
+        try:
+            r = subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%cs %h"], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
     return "dev"
+
+
+@router.get("/update/check")
+def update_check():
+    """Is a newer version on GitHub? Compares this copy's commit with origin/main."""
+    from ..config import ROOT
+    if not (ROOT / ".git").exists():
+        return {"installed_from_git": False, "local": _app_version(), "remote": "", "behind": False, "error": "This copy wasn't installed from GitHub"}
+    try:
+        local = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5).stdout.strip()
+        r = subprocess.run(["git", "-C", str(ROOT), "ls-remote", "--heads", "origin", "main"], capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            return {"installed_from_git": True, "local": _app_version(), "remote": "", "behind": False, "error": (r.stderr.strip() or "could not reach GitHub")[-200:]}
+        remote = (r.stdout.split() or [""])[0]
+        return {"installed_from_git": True, "local": _app_version(), "remote": remote[:7], "behind": bool(remote) and remote != local, "error": ""}
+    except Exception as e:
+        return {"installed_from_git": True, "local": _app_version(), "remote": "", "behind": False, "error": str(e)[-200:]}
+
+
+@router.post("/update")
+def update_now():
+    """Pull the latest from GitHub and reinstall. The server restarts itself as part of it."""
+    from ..config import ROOT
+    if not (ROOT / ".git").exists():
+        raise HTTPException(400, "This copy wasn't installed from GitHub; install the new zip instead")
+    if runner.busy:
+        raise HTTPException(409, "A phone is posting; update when it's idle")
+    log_path = DATA_DIR / "logs" / "update.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "ab") as logf:
+        subprocess.Popen(["/bin/zsh", str(ROOT / "update.sh")], cwd=str(ROOT), stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
+    return {"started": True, "log": str(log_path)}
 
 
 @router.get("/runner", response_model=RunnerState)

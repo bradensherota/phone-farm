@@ -29,7 +29,7 @@ trust it under Settings → General → VPN & Device Management and press Connec
 phone's page add your accounts, and in Photos make a **Farm Queue** album for the clips you
 plan to post. Plan the week in the planner, press **Run day** in the morning.
 
-Updating: unzip the new version over the folder (keep `data/`), run `./install.sh` again.
+Updating: unzip the new version anywhere and run its Install.command; it moves your `data/` over from the previous copy by itself. If macOS blocks Install.command: System Settings → Privacy & Security → scroll down → "Open Anyway", or run `./install.sh` in Terminal.
 `./uninstall.sh` stops the server; `tools/package.sh` makes a zip to hand to someone else.
 
 For development: `./run.sh --server` runs the API only; `cd frontend && npm run dev` serves

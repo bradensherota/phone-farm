@@ -30,8 +30,22 @@ if command -v npm >/dev/null 2>&1; then (cd frontend && npm install --silent && 
 mkdir -p "$HOME/PhoneFarm" data/logs
 swiftc -O -o "$HOME/PhoneFarm/ocr" backend/tools/ocr.swift
 
-# 5. Always-on server + keep the Mac awake (launchd, this user only)
+# 5. Updating from a previous copy of the app in another folder? Bring its data along
+#    (phones, accounts, plans, thumbnails), so an update never starts from scratch.
 AGENTS="$HOME/Library/LaunchAgents"; mkdir -p "$AGENTS"
+if [ -f "$AGENTS/com.phonefarm.server.plist" ] && [ ! -f "$ROOT/data/farm.db" ]; then
+  OLD_BACKEND="$(plutil -extract WorkingDirectory raw -o - "$AGENTS/com.phonefarm.server.plist" 2>/dev/null || true)"
+  OLD_ROOT="$(dirname "$OLD_BACKEND" 2>/dev/null || true)"
+  if [ -n "$OLD_ROOT" ] && [ "$OLD_ROOT" != "$ROOT" ] && [ -f "$OLD_ROOT/data/farm.db" ]; then
+    echo "Moving your data from the previous copy ($OLD_ROOT/data) into this one…"
+    launchctl bootout "gui/$(id -u)" "$AGENTS/com.phonefarm.server.plist" >/dev/null 2>&1 || true
+    rm -rf "$ROOT/data"
+    mv "$OLD_ROOT/data" "$ROOT/data"
+    echo "Done. The old folder ($OLD_ROOT) can be deleted."
+  fi
+fi
+
+# 6. Always-on server + keep the Mac awake (launchd, this user only)
 TZ_NAME="$(readlink /etc/localtime | sed 's|.*/zoneinfo/||')"
 for old in "$AGENTS"/*phonefarm*.plist(N); do
   launchctl bootout "gui/$(id -u)" "$old" >/dev/null 2>&1 || true

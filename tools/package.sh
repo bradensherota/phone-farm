@@ -4,5 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="$HOME/Desktop/phone-farm-$(date +%Y-%m-%d).zip"
 rm -f "$OUT"
-zip -qr "$OUT" . -x "data/*" "backend/.venv/*" "frontend/node_modules/*" ".git/*" "sim_media/*" "*/__pycache__/*" "*.pyc" "*.DS_Store" "tools/WebDriverAgent/*"
-echo "Ready: $OUT ($(du -h "$OUT" | cut -f1)). Send it; they unzip it and run ./install.sh"
+# the zip always unpacks to a folder called "phone-farm", whatever the zip is named
+STAGE="$(mktemp -d)"; mkdir -p "$STAGE/phone-farm"
+rsync -a --exclude "data" --exclude "backend/.venv" --exclude "frontend/node_modules" --exclude ".git" --exclude "sim_media" \
+      --exclude "__pycache__" --exclude "*.pyc" --exclude ".DS_Store" --exclude "tools/WebDriverAgent" ./ "$STAGE/phone-farm/"
+(cd "$STAGE" && zip -qr "$OUT" phone-farm)
+rm -rf "$STAGE"
+echo "Ready: $OUT ($(du -h "$OUT" | cut -f1)). Send it; it unpacks to a 'phone-farm' folder; they double-click Install.command (or run ./install.sh)"

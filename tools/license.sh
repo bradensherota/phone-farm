@@ -16,8 +16,10 @@ api() { curl -s -H "Authorization: Bearer $TOKEN" -H "content-type: application/
 set_() { api -X POST "$URL/v1/admin/set" -d "$1" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-if "error" in r: print("error:", r["error"]); sys.exit(1)
-print(f"{r.get(\"name\") or \"?\"} · {r.get(\"mac_name\")} · {r[\"state\"]} · {r.get(\"max_phones\")} phones" + (f" · {r[\"message\"]}" if r.get("message") else ""))'; }
+if "error" in r:
+    print("error:", r["error"]); sys.exit(1)
+name = r.get("name") or "?"; mac = r.get("mac_name") or ""; msg = r.get("message") or ""
+print(name + " · " + mac + " · " + r["state"] + " · " + str(r.get("max_phones")) + " phones" + (" · " + msg if msg else ""))'; }
 case "${1:-list}" in
   list)
     api "$URL/v1/admin/list" | python3 -c '

@@ -72,7 +72,7 @@ def checkin(phones: int, version: str) -> dict | None:
     body = {"mac_id": mac_id(), "mac_name": mac_name(), "user_name": (settings_mod.get("your_name", "") or "").strip(),
             "phones": phones, "version": version}
     req = urllib.request.Request(LICENSE_URL + "/v1/checkin", data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", "User-Agent": f"PhoneFarm/{version or 'dev'}"})  # Cloudflare blocks the default Python agent
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             ans = json.loads(r.read() or b"{}")

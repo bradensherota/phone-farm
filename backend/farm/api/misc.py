@@ -152,6 +152,7 @@ def runner_state():
         busy_devices=sorted(runner.busy),
         current=dict(runner.current),
         version=_app_version(),
+        license=__import__("farm.license", fromlist=["status"]).status(),
     )
 
 

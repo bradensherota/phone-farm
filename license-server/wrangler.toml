@@ -1,0 +1,7 @@
+name = "phone-farm-license"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[kv_namespaces]]
+binding = "LICENSES"
+id = "a3c9189452a944d5be00deb2793198d4"

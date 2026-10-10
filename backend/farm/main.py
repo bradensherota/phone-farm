@@ -41,6 +41,9 @@ async def lifespan(app: FastAPI):
     manager.start_watchdog()
     from . import hover
     hover.start_warmer(manager)  # silent hover clips for album videos, while phones sit idle on the cable
+    from . import license as license_mod
+    from .api.misc import _app_version
+    license_mod.start(manager, _app_version)
     log.info("Phone Farm ready")
     try:
         yield

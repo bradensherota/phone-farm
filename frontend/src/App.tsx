@@ -34,6 +34,7 @@ function Rail() {
           Runner {runner ? (runner.enabled ? (runner.busy_devices.length ? `posting on ${runner.busy_devices.length}` : "idle") : "paused") : "…"}
           {runner?.version && <span className="dim" title="Phone Farm version (the date of the zip it was installed from)" style={{ marginLeft: 8, fontSize: 11 }}>v{runner.version}</span>}
         </span>
+        {runner?.license?.message && <span style={{ color: runner.license.active ? "var(--amber)" : "var(--red)" }} title={runner.license.message}>{runner.license.message}</span>}
       </div>
     </aside>
   );

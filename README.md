@@ -6,24 +6,21 @@ one action at a time, the way a person holding the phone would.
 
 ## Setup on a new Mac
 
-You need: a Mac with **Xcode** (App Store, open it once), **Homebrew**, an **Apple ID** signed into
-Xcode (Settings → Accounts; a free one is fine, the app re-signs the phone runner itself every
-7 days), and a **GitHub account** that has been invited to this repository.
-
-Paste into Terminal, one line at a time:
+You need a Mac with **Xcode** (App Store, open it once), **Homebrew**, and an **Apple ID** signed
+into Xcode (Settings → Accounts; a free one is fine, the app re-signs the phone runner itself every
+7 days). Then paste this into Terminal:
 
 ```bash
-brew install gh && gh auth login --hostname github.com --git-protocol https --web
+curl -fsSL https://raw.githubusercontent.com/bradensherota/phone-farm/main/bootstrap.sh | zsh
 ```
 
-```bash
-gh repo clone bradensherota/phone-farm ~/phone-farm && cd ~/phone-farm && ./install.sh
-```
-
-The first signs you into GitHub (press Enter when it asks, approve in the browser). The second
-downloads the app into `~/phone-farm`, installs it, and sets the server to run whenever you're
+It downloads the app into `~/phone-farm`, installs it, and sets the server to run whenever you're
 logged in, at http://localhost:8765. For a Dock icon, open that address in Chrome and use
-menu ⋮ → Cast, save and share → Install page as app.
+menu ⋮ → Cast, save and share → Install page as app. In Settings, put your name in "Your name".
+
+**Trial and activation.** A new Mac works for 7 days straight away. After that Braden activates it
+(the sidebar shows the trial days left, and the app says when it's waiting). Phones per Mac: 3 unless
+Braden sets more.
 
 **Updating:** Settings → Updates → **Update now**. It pulls the latest from GitHub, reinstalls and
 restarts; your data stays where it is. The installed version shows at the bottom-left of the sidebar.

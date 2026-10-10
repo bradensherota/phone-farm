@@ -155,10 +155,24 @@ class DeviceManager:
         self.last_error.pop(device_id, None)
         log.info("%s: runner stopped (disconnected)", getattr(drv, "name", device_id))
 
+    def over_phone_limit(self, device_id: str) -> str:
+        """'' when this phone is within the plan's limit, else why not."""
+        from ..license import max_phones
+        limit = max_phones()
+        with session_scope() as s:
+            ids = [d.id for d in s.query(Device).filter(Device.kind != "sim").order_by(Device.sort_order, Device.id).all()]
+        if device_id in ids and ids.index(device_id) >= limit:
+            return f"Your plan covers {limit} phone{'s' if limit != 1 else ''}; this is phone {ids.index(device_id) + 1}. Ask Braden for more."
+        return ""
+
     def connect_async(self, device_id: str) -> None:
         """Start a phone's runner in the background (takes up to ~90s for real phones)."""
         drv = self._drivers.get(device_id)
         if drv is None:
+            return
+        over = self.over_phone_limit(device_id)
+        if over:
+            self.last_error[device_id] = over
             return
         with self._lock:
             if device_id in self._connecting:

@@ -132,6 +132,10 @@ def start_today(s: Session = Depends(get_session)):
     """The morning button: every connected phone runs its whole queue for today, in order.
     Phones that are paused are resumed; phones that aren't connected are skipped."""
     from datetime import datetime
+    from ..license import allowed as _lic_allowed
+    ok, why = _lic_allowed()
+    if not ok:
+        raise HTTPException(409, why)
     today = date.today()
     now = datetime.now()
     out = []
@@ -188,6 +192,10 @@ def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
     if s.get(Device, device_id) is None:
         raise HTTPException(404, "device not found")
     from datetime import datetime
+    from ..license import allowed as _lic_allowed
+    ok, why = _lic_allowed()
+    if not ok:
+        raise HTTPException(409, why)
     jobs = (
         s.query(Job)
         .filter(Job.device_id == device_id, Job.run_date == run_date,

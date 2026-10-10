@@ -137,6 +137,9 @@ class Runner:
     async def tick(self) -> None:
         if not settings_mod.as_bool(settings_mod.get("runner_enabled", "true")):
             return
+        from .license import allowed
+        if not allowed()[0]:
+            return
         now = datetime.now()
         if settings_mod.as_bool(settings_mod.get("auto_start", "false")):
             # only when days start by themselves does "its day passed" mean anything; with
@@ -312,6 +315,11 @@ class Runner:
                 job.last_stage = ""
             job.run_stage, job.run_mode = "", ""
             from_start = not stage_only and not stage_from
+        from .license import allowed as _lic_allowed
+        ok, why = _lic_allowed()
+        if not ok:
+            self._defer(job_id, why or "Phone Farm is paused on this Mac", seconds=900)
+            return
         # a phone disconnected by hand is connected again when a job needs it
         if drv is not None and drv.kind != "sim" and self.manager.is_parked(device_id):
             self.manager.set_parked(device_id, False)

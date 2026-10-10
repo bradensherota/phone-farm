@@ -5,6 +5,8 @@ import { PhoneScreen, Pill, PlatformIcon, StatusDot, usePoll, useToast } from ".
 export default function DevicesPage() {
   const { data: devices, reload } = usePoll(api.devices, 3000);
   const { data: settings, reload: reloadSettings } = usePoll(api.settings, 5000);
+  const { data: runnerState } = usePoll(api.runner, 10000);
+  const lic = runnerState?.license;
   const nav = useNavigate();
   const toast = useToast();
   const enabled = settings?.runner_enabled === "true";
@@ -51,6 +53,12 @@ export default function DevicesPage() {
         </div>
       </div>
 
+      {lic && !lic.active && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "var(--red)" }}><div className="card-body">
+          <b style={{ color: "var(--red)" }}>{lic.message}</b>
+          <div className="small dim">You can still plan; nothing posts until it's active again.</div>
+        </div></div>
+      )}
       {!devices ? <div className="empty">Loading…</div> : (
         <div className="phones">
           {devices.map((d) => {

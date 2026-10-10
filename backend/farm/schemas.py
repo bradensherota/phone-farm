@@ -181,3 +181,4 @@ class RunnerState(BaseModel):
     busy_devices: list[str]
     current: dict[str, int]
     version: str = "dev"  # from the VERSION file the zip carries; "dev" on a working copy
+    license: dict = {}  # state/active/message/max_phones/trial_until from the license service

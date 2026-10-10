@@ -217,6 +217,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "queue_auto": "false",  # true = the app fills/empties the queue album itself; false = you manage the album on the phone
     "disconnect_after_queue": "true",
     "apple_team_id": "",
+    "your_name": "",  # shown to Braden next to this Mac in his list of installs
+    "license_state": "",  # last answer from the license service (json)
     "require_blocks": "true",  # a kind of post on an account only runs inside `block_days` consecutive planned days of that kind
     "block_days": "4",  # 10-character Apple team ID used to sign the phone runner; blank = detect from Xcode's signed-in Apple ID  # true = stop the phone's runner (the "Automation Running" overlay) when its day's queue is done
 }

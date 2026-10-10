@@ -238,6 +238,10 @@ def run_now(job_id: int, s: Session = Depends(get_session)):
         raise HTTPException(404, "job not found")
     if j.status == JobStatus.running:
         raise HTTPException(409, "already running")
+    from ..license import allowed as _lic_allowed
+    ok, why = _lic_allowed()
+    if not ok:
+        raise HTTPException(409, why)
     from ..blocks import lock_reason
     reason = lock_reason(s, j)
     if reason:
@@ -267,6 +271,10 @@ def run_stage(job_id: int, stage: str, mode: str = "only", s: Session = Depends(
         raise HTTPException(404, "job not found")
     if j.status == JobStatus.running:
         raise HTTPException(409, "already running")
+    from ..license import allowed as _lic_allowed
+    ok, why = _lic_allowed()
+    if not ok:
+        raise HTTPException(409, why)
     from ..blocks import lock_reason
     reason = lock_reason(s, j)
     if reason:

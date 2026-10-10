@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { api } from "./lib/api";
+import { useState } from "react";
 import { ConfirmProvider, StatusDot, ToastProvider, usePoll } from "./components/common";
 import DevicesPage from "./pages/DevicesPage";
 import DevicePage from "./pages/DevicePage";
@@ -40,10 +41,39 @@ function Rail() {
   );
 }
 
+function PausedOverlay() {
+  const { data: runner, reload } = usePoll(api.runner, 5000);
+  const [checking, setChecking] = useState(false);
+  const [note, setNote] = useState("");
+  const lic = runner?.license;
+  if (!lic || lic.active) return null;
+  const title = lic.state === "expired" ? "Trial Over" : "Service Paused";
+  const check = async () => {
+    setChecking(true); setNote("");
+    try { const r = await api.licenseCheckin(); setNote(r.error ? r.error : r.active ? "Active again. One moment…" : "Still paused."); reload(); }
+    catch (e: any) { setNote(e.message); }
+    finally { setChecking(false); }
+  };
+  return (
+    <div className="paused-overlay">
+      <div className="paused-card">
+        <div className="paused-title">{title}</div>
+        <div className="paused-msg">{lic.message}</div>
+        <div className="small dim" style={{ marginTop: 10 }}>Your phones, accounts and plans are kept. Nothing posts until this Mac is active again.</div>
+        <div className="row" style={{ marginTop: 18, justifyContent: "center", gap: 10 }}>
+          <button className="btn primary" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check again"}</button>
+        </div>
+        {note && <div className="small" style={{ marginTop: 10, color: "var(--text-2)" }}>{note}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ToastProvider>
       <ConfirmProvider>
+      <PausedOverlay />
       <div className="shell">
         <Rail />
         <main className="main">

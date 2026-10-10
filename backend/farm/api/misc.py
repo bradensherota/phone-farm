@@ -113,6 +113,18 @@ def _app_version() -> str:
     return "dev"
 
 
+@router.post("/license/checkin")
+def license_checkin_now():
+    """Ask the license service right now (the 'Check again' button on the paused screen)."""
+    from .. import license as license_mod
+    from ..db import session_scope
+    from ..models import Device
+    with session_scope() as s:
+        phones = s.query(Device).filter(Device.kind != "sim").count()
+    ans = license_mod.checkin(phones, _app_version())
+    return license_mod.status() if ans is not None else {**license_mod.status(), "error": "Could not reach the license service"}
+
+
 @router.get("/update/check")
 def update_check():
     """Is a newer version on GitHub? Compares this copy's commit with origin/main."""

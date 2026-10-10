@@ -107,10 +107,12 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                 raise HTTPException(400, f"{meta['label']} needs a video")
 
         origin_posted = False  # the origin already posted; only its unposted copies take the edit
+        old_key = ""  # the group this job led before the edit (its key carries the old date)
         if item.id is not None:
             job = s.get(Job, item.id)
             if job is None:
                 raise HTTPException(404, f"job {item.id} not found")
+            old_key = job.group_key or ""
             if job.status in (JobStatus.running, JobStatus.done):
                 is_group_origin = meta["label"] == "Story" and item.all_accounts and job.group_key.startswith(f"allstories:{account.id}:")
                 if not is_group_origin or job.status == JobStatus.running:
@@ -143,9 +145,17 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
         if meta["label"] == "Story":
             key = f"allstories:{account.id}:{item.run_date.isoformat()}"
             all_phones = bool(item.all_phones) and bool(item.all_accounts)
+            led_before = old_key.startswith(f"allstories:{account.id}:")
             if item.all_accounts:
                 job.group_key = key
                 job.group_scope = "all" if all_phones else "phone"
+                if led_before and old_key != key:
+                    # the origin moved to another day: its unposted copies move with it (same group, new key)
+                    for twin in s.query(Job).filter(Job.group_key == old_key, Job.id != job.id,
+                                                    Job.status.in_([JobStatus.scheduled, JobStatus.failed])).all():
+                        twin.run_date = item.run_date
+                        twin.run_at = None
+                        twin.group_key = key
                 s.flush()
                 others = (
                     s.query(Account)
@@ -205,9 +215,9 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                         twin.attempts = 0
                         twin.last_error = ""
                     saved.append(twin)
-            elif job.group_key == key:
-                # toggle turned off on the origin: drop the mirrored copies (keep the origin)
-                for twin in s.query(Job).filter(Job.group_key == key, Job.id != job.id, Job.status == JobStatus.scheduled).all():
+            elif led_before:
+                # toggle turned off on the origin: drop the mirrored copies (keep the origin), whatever day they sat on
+                for twin in s.query(Job).filter(Job.group_key == old_key, Job.id != job.id, Job.status == JobStatus.scheduled).all():
                     s.delete(twin)
                 job.group_key = ""
     s.commit()

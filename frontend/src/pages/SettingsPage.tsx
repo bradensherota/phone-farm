@@ -12,6 +12,11 @@ function UpdatesCard() {
   const doCheck = async () => { setChecking(true); try { setCheck(await api.updateCheck()); } catch (e: any) { toast(e.message, "err"); } finally { setChecking(false); } };
   useEffect(() => { doCheck(); }, []);
   useEffect(() => { if (updating && runner?.version && runner.version !== updating) { setUpdating(null); toast(`Updated to ${runner.version}`); doCheck(); } }, [runner?.version]);
+  useEffect(() => {  // same version after the restart (already current): release the button after the install has had time to finish
+    if (!updating) return;
+    const t = window.setTimeout(() => { setUpdating(null); doCheck(); toast("Update finished"); }, 180000);
+    return () => window.clearTimeout(t);
+  }, [updating]);
   const update = async () => {
     if (!(await ask("Update Phone Farm from GitHub now? The app restarts itself; takes a minute or two. Nothing is lost.", "Update"))) return;
     try { await api.updateNow(); setUpdating(runner?.version || "?"); toast("Updating… the page will come back on its own"); }

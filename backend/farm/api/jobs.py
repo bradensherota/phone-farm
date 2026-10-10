@@ -25,7 +25,8 @@ def job_out(j: Job, s: Session | None = None) -> JobOut:
         out.media = MediaOut.model_validate(j.media)
         out.media.has_thumb = bool(j.media.thumb_path)
         out.media.has_hover = bool(j.media.hover_path) and j.media.hover_path != "skip"
-    out.has_screenshot = bool(j.screenshot_path) and Path(j.screenshot_path).exists()
+    from ..paths import resolve as _resolve
+    out.has_screenshot = _resolve(j.screenshot_path) is not None
     if j.group_key.startswith("allstories:"):
         try:
             out.group_origin_account_id = int(j.group_key.split(":")[1])
@@ -329,10 +330,12 @@ def logs(job_id: int, s: Session = Depends(get_session)):
 
 @router.get("/{job_id}/screenshot.png")
 def screenshot(job_id: int, s: Session = Depends(get_session)):
+    from ..paths import resolve as _resolve
     j = s.get(Job, job_id)
-    if j is None or not j.screenshot_path or not Path(j.screenshot_path).exists():
+    f = _resolve(j.screenshot_path) if j is not None else None
+    if f is None:
         raise HTTPException(404, "no screenshot")
-    return FileResponse(j.screenshot_path, media_type="image/png", headers={"Cache-Control": "no-store"})
+    return FileResponse(str(f), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 __all__ = ["router", "Device"]

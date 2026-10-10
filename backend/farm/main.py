@@ -22,6 +22,11 @@ log = logging.getLogger("farm")
 async def lifespan(app: FastAPI):
     init_db()
     settings_mod.ensure_defaults()
+    try:
+        from .paths import rebase_all
+        rebase_all()  # thumbnails/hover clips/screenshots recorded under an old data folder path
+    except Exception:
+        log.exception("path repair")
     manager.seed_if_empty()
     try:
         from .db import session_scope

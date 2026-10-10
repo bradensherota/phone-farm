@@ -30,13 +30,15 @@ def thumb(media_id: int, s: Session = Depends(get_session)):
     m = s.get(MediaItem, media_id)
     if m is None:
         raise HTTPException(404, "no such media")
-    if m.thumb_path and Path(m.thumb_path).exists():
-        return FileResponse(m.thumb_path, media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    from ..paths import resolve
+    f = resolve(m.thumb_path)
+    if f is not None:
+        return FileResponse(str(f), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
     with _thumb_locks_guard:
         lock = _thumb_locks.setdefault(media_id, threading.Lock())
     with lock:
         s.refresh(m)
-        if not (m.thumb_path and Path(m.thumb_path).exists()):
+        if resolve(m.thumb_path) is None:
             drv = manager.driver(m.device_id)
             if drv is None or not drv.is_connected():
                 raise HTTPException(404, "phone not connected")
@@ -208,10 +210,12 @@ PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 @router.get("/media/{media_id}/hover.mp4")
 def hover_clip(media_id: int, s: Session = Depends(get_session)):
     """The silent 320px hover clip, if it has been made (see farm/hover.py)."""
+    from ..paths import resolve
     m = s.get(MediaItem, media_id)
-    if m is None or not m.hover_path or m.hover_path == "skip" or not Path(m.hover_path).exists():
+    f = resolve(m.hover_path) if m is not None else None
+    if f is None:
         raise HTTPException(404, "no hover clip yet")
-    return FileResponse(m.hover_path, media_type="video/mp4", headers={"Cache-Control": "max-age=604800"})
+    return FileResponse(str(f), media_type="video/mp4", headers={"Cache-Control": "max-age=604800"})
 
 
 @router.get("/media/{media_id}/preview")

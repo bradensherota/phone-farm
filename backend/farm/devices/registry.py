@@ -426,7 +426,10 @@ class DeviceManager:
                     pth = getattr(r, attr)
                     if pth and pth != "skip":
                         try:
-                            Path(pth).unlink(missing_ok=True)
+                            from ..paths import resolve as _resolve
+                            f = _resolve(pth)
+                            if f is not None:
+                                f.unlink(missing_ok=True)
                         except Exception:
                             pass
                     setattr(r, attr, "")

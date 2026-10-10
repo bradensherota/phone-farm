@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, ActionMeta, Device, Job, JobIn, Media } from "../lib/api";
-import { actionsFor, api, fmtDateTime, parseYmd, toLocalInput } from "../lib/api";
+import { actionsFor, api, fmtDateTime, parseYmd, storiesOn, toLocalInput } from "../lib/api";
 import { MediaThumb, Pill, PlatformIcon, usePoll, useToast } from "./common";
 import MediaPicker, { inAlbum } from "./MediaPicker";
 import JobDetail from "./JobDetail";
@@ -27,28 +27,30 @@ interface Draft {
   link: string;
   link_text: string;
   run_at: string; // local datetime-local value or ""
+  run_date: string; // YYYY-MM-DD; change it to move the job to another day
   job?: Job;
 }
 
-function draftFrom(meta: ActionMeta, account: Account, job?: Job): Draft {
+function draftFrom(meta: ActionMeta, account: Account, date: string, job?: Job): Draft {
   if (job) {
     const origin = job.group_origin_account_id;
     return {
       enabled: true, jobId: job.id, status: job.status, media: job.media, caption: job.caption,
-      link: job.link, link_text: job.link_text, run_at: toLocalInput(job.run_at), job,
+      link: job.link, link_text: job.link_text, run_at: toLocalInput(job.run_at), run_date: job.run_date || date, job,
       allAccounts: origin !== null && origin === account.id,
       allPhones: origin !== null && origin === account.id && job.group_scope === "all",
       mirroredFrom: origin !== null && origin !== account.id ? origin : null,
       mirroredLabel: job.group_origin_handle ? `@${job.group_origin_handle}${job.group_origin_device ? ` (${job.group_origin_device})` : ""}` : "",
     };
   }
-  return { enabled: false, media: null, caption: "", link: meta.link ? account.story_link : "", link_text: "", run_at: "" };
+  return { enabled: false, media: null, caption: "", link: meta.link ? account.story_link : "", link_text: "", run_at: "", run_date: date };
 }
 
 export default function PlanDrawer({ account, device, date, jobs, onClose, onSaved }: Props) {
   const { data: settings } = usePoll(api.settings, 15000);
   const ttStories = settings?.tiktok_stories === "true";
-  const actions = useMemo(() => actionsFor(account.platform).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories]);
+  const stories = storiesOn(settings, device.id);
+  const actions = useMemo(() => actionsFor(account.platform, stories).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories, stories]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [picker, setPicker] = useState<ActionKey | null>(null);
   const [detail, setDetail] = useState<Job | null>(null);
@@ -63,7 +65,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
   useEffect(() => {
     if (dirtyRef.current) return;
     const d: Record<string, Draft> = {};
-    for (const a of actions) d[a.action] = draftFrom(a, account, jobs.find((j) => j.action === a.action));
+    for (const a of actions) d[a.action] = draftFrom(a, account, date, jobs.find((j) => j.action === a.action));
     setDrafts(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.id, date, jobsKey, actions]);
@@ -73,6 +75,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
   const save = async () => {
     const upserts: JobIn[] = [];
     const deletes: number[] = [];
+    const moved: string[] = [];
     for (const a of actions) {
       const d = drafts[a.action];
       if (!d) continue;
@@ -83,10 +86,14 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
       if (d.enabled) {
         if (!d.media && !(d.jobId && d.job?.origin_media_id)) { toast(`${a.label} needs media`, "err"); return; }
         if (a.link && !d.link) { toast(`${a.label} needs a link`, "err"); return; }
+        // a changed Day moves the job (and its all-accounts copies) there; a set time keeps its clock time
+        const runDate = d.run_date || date;
+        const runAt = d.run_at ? (runDate !== date ? runDate + d.run_at.slice(10) : d.run_at) : "";
+        if (runDate !== date) moved.push(`${a.label} → ${parseYmd(runDate).toLocaleDateString([], { weekday: "short", day: "numeric" })}`);
         upserts.push({
           id: d.jobId, account_id: account.id, action: a.action, media_id: d.media ? d.media.id : null,
           caption: d.caption, link: a.link ? d.link : "", link_text: a.link ? d.link_text : "",
-          run_date: date, run_at: d.run_at ? new Date(d.run_at).toISOString() : null,
+          run_date: runDate, run_at: runAt ? new Date(runAt).toISOString() : null,
           all_accounts: !!d.allAccounts || !!d.allPhones,
           all_phones: !!d.allPhones,
         });
@@ -98,7 +105,7 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
     try {
       if (upserts.length) await api.upsertJobs(upserts);
       for (const id of deletes) await api.deleteJob(id);
-      toast("Saved");
+      toast(moved.length ? `Saved · ${moved.join(", ")}` : "Saved");
       onSaved();
       onClose();
     } catch (e: any) {
@@ -141,6 +148,15 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                   {d.job?.locked && <span className="small" style={{ color: "var(--amber)" }} title={d.job.locked}>🔒 {d.job.locked}</span>}
                   {d.job && <button className="btn sm ghost" onClick={() => setDetail(d.job!)}>Details</button>}
                 </div>
+                {d.enabled && !locked && !d.mirroredFrom && (
+                  <div className="sec-body" style={{ paddingTop: 0 }}>
+                    <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                      <span className="small dim">Day</span>
+                      <input className="input" type="date" style={{ width: 160 }} value={d.run_date || date} onChange={(e) => upd(a.action, { run_date: e.target.value || date })} title="Pick another day and Save: this moves to that day's slot (all-accounts copies move with it)" />
+                      {d.run_date && d.run_date !== date && <span className="small" style={{ color: "var(--amber)" }}>moves to {parseYmd(d.run_date).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })} on Save</span>}
+                    </div>
+                  </div>
+                )}
                 {d.enabled && d.mirroredFrom && (
                   <div className="sec-body">
                     <div className="small dim">Set for {fromOtherPhone ? "every phone" : "every account on this phone"} from <b>{originHandle}</b>. Edit or remove it there.</div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Media } from "../lib/api";
-import { api, fmtDuration, HOVER_RATE, hoverUrl, thumbUrl, STORIES } from "../lib/api";
-import { useToast } from "./common";
+import { api, fmtDuration, HOVER_RATE, hoverUrl, thumbUrl, storiesOn } from "../lib/api";
+import { useToast, usePoll } from "./common";
 
 interface Props {
   deviceId: string;
@@ -101,7 +101,8 @@ export default function MediaPicker({ deviceId, deviceName, kind, selectedId, on
   const [items, setItems] = useState<Media[]>([]);
   const [filter, setFilter] = useState<"all" | "video" | "photo">(kind === "video" ? "video" : "all");
   const [storyAlbumRaw, setStoryAlbum] = useState("");
-  const storyAlbum = STORIES ? storyAlbumRaw : "";
+  const { data: pickerSettings } = usePoll(api.settings, 60000);
+  const storyAlbum = storiesOn(pickerSettings, deviceId) ? storyAlbumRaw : "";
   const [queueAlbum, setQueueAlbum] = useState("");
   const [albumSorts, setAlbumSorts] = useState<Record<string, { by: string; ascending: boolean }>>({});
   const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("queue");

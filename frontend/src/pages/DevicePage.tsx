@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Account, Device, Job, Media, Platform } from "../lib/api";
-import { actionMeta, api, fmtDateTime, ymd, STORIES } from "../lib/api";
+import { actionMeta, api, fmtDateTime, ymd, storiesOn } from "../lib/api";
 import { PhoneScreen, Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import { MediaPreview, RollGrid } from "../components/MediaPicker";
 import JobDetail from "../components/JobDetail";
@@ -48,6 +48,10 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
   const { data: settings } = usePoll(api.settings, 10000);
   const autoStart = settings?.auto_start === "true";
   const nav = useNavigate();
+  const { data: devSettings } = usePoll(api.settings, 15000);
+  const [storiesLocal, setStoriesLocal] = useState<boolean | null>(null);
+  const stories = storiesLocal ?? storiesOn(devSettings, device.id);
+  const setStories = async (on: boolean) => { setStoriesLocal(on); try { await api.putSettings({ [`stories_off:${device.id}`]: on ? "false" : "true" }); toast(on ? "Stories on for this phone" : "Stories off for this phone"); } catch (e: any) { setStoriesLocal(null); toast(e.message, "err"); } };
   const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min });
   useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.prepare_lead_min]);
   const [passcode, setPasscode] = useState("");
@@ -117,7 +121,8 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
         <div className="field"><label>Queue album</label><input className="input" style={{ width: 130 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Photos album on this phone where you put the clips you plan. Reels, posts and stories are picked from here." /></div>
         <div className="field"><label>Passcode {device.has_passcode ? <span className="dim">(set)</span> : <span className="dim">(none)</span>}</label><input className="input" type="password" style={{ width: 100 }} placeholder={device.has_passcode ? "••••••" : "none"} autoComplete="off" onChange={(e) => setPasscode(e.target.value)} value={passcode} title="Lock-screen passcode the runner types to wake this phone. Stored only in this Mac's local database." /></div>
-        {STORIES && <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>}
+        <div className="field"><label>Stories</label><label className="switch" title="Off: no Story planning, no ★ story album, no story options for this phone"><input type="checkbox" checked={stories} onChange={(e) => setStories(e.target.checked)} /><span className="small">{stories ? "on" : "off"}</span></label></div>
+        {stories && <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>}
         {autoStart && <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>}
         <div className="field"><label>Gap between actions (s)</label>
           <div className="row">
@@ -281,6 +286,7 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
 }
 
 function RollTab({ device, onChanged }: { device: Device; onChanged: () => void }) {
+  const { data: rollSettings } = usePoll(api.settings, 60000);
   const [items, setItems] = useState<Media[] | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [preview, setPreview] = useState<Media | null>(null);
@@ -299,7 +305,7 @@ function RollTab({ device, onChanged }: { device: Device; onChanged: () => void 
         </span>
         <button className="btn sm" onClick={sync} disabled={syncing}>{syncing ? "Syncing…" : "Sync from phone"}</button>
       </div>
-      {items ? <RollGrid items={items} selectedId={null} onSelect={(m) => setPreview(m)} storyAlbum={STORIES ? device.story_album : ""} /> : <div className="empty">Loading…</div>}
+      {items ? <RollGrid items={items} selectedId={null} onSelect={(m) => setPreview(m)} storyAlbum={storiesOn(rollSettings, device.id) ? device.story_album : ""} /> : <div className="empty">Loading…</div>}
       {preview && <MediaPreview media={preview} onClose={() => setPreview(null)} />}
     </div>
   );

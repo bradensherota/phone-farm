@@ -13,6 +13,21 @@ URL="https://phone-farm-license.bradensherota.workers.dev"
 TOKEN="$(cat "$HOME/.phonefarm-admin-token" 2>/dev/null || true)"
 [ -n "$TOKEN" ] || { echo "no admin token at ~/.phonefarm-admin-token" >&2; exit 1; }
 api() { curl -s -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" "$@"; }
+LIST_PY=$(cat <<'PY'
+import sys, json
+d = json.load(sys.stdin); now = d["now"]
+def ago(ms):
+    if not ms: return "never"
+    m = int((now - ms) / 60000)
+    return f"{m} min ago" if m < 120 else (f"{m // 60} h ago" if m < 2880 else f"{m // 1440} d ago")
+if not d["macs"]: print("nobody has checked in yet")
+for r in d["macs"]:
+    state = r["state"]
+    if state == "trial": state += " (%d d left)" % max(0, round((r["trial_until"] - now) / 86400000))
+    name = r.get("name") or "?"; mac = r.get("mac_name") or ""
+    print(f"{name:16} {mac:24} {state:18} phones {r.get('phones', 0)}/{r.get('max_phones')}   seen {ago(r.get('last_seen'))}   v{r.get('version', '')}   id {r['mac_id']}")
+PY
+)
 set_() { api -X POST "$URL/v1/admin/set" -d "$1" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
@@ -22,17 +37,7 @@ name = r.get("name") or "?"; mac = r.get("mac_name") or ""; msg = r.get("message
 print(name + " · " + mac + " · " + r["state"] + " · " + str(r.get("max_phones")) + " phones" + (" · " + msg if msg else ""))'; }
 case "${1:-list}" in
   list)
-    api "$URL/v1/admin/list" | python3 -c '
-import sys, json, time
-d = json.load(sys.stdin); now = d["now"]
-def ago(ms):
-    if not ms: return "never"
-    m = int((now - ms) / 60000)
-    return f"{m} min ago" if m < 120 else f"{m // 60} h ago" if m < 2880 else f"{m // 1440} d ago"
-if not d["macs"]: print("nobody has checked in yet")
-for r in d["macs"]:
-    state = r["state"] + (f" ({max(0, round((r['trial_until'] - now) / 86400000))} d left)" if r["state"] == "trial" else "")
-    print(f"{(r.get('name') or '?'):16} {(r.get('mac_name') or ''):24} {state:18} phones {r.get('phones', 0)}/{r.get('max_phones')}   seen {ago(r.get('last_seen'))}   v{r.get('version', '')}   id {r['mac_id']}")' ;;
+    api "$URL/v1/admin/list" | python3 -c "$LIST_PY" ;;
   on)     set_ "{\"who\":\"$2\",\"state\":\"active\"}" ;;
   off)    set_ "{\"who\":\"$2\",\"state\":\"off\"}" ;;
   limit)  set_ "{\"who\":\"$2\",\"max_phones\":$3}" ;;

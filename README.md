@@ -10,9 +10,8 @@ Everything runs on your Mac; the phones plug in over USB. You need: a Mac with *
 (App Store, open it once), **Homebrew**, and an **Apple ID** signed into Xcode (Settings →
 Accounts; a free one is fine, the app re-signs the phone runner by itself every 7 days).
 
-```bash
-./install.sh
-```
+Double-click **Install.command** in the folder (first time, if macOS objects: right-click it → Open).
+Or in Terminal, inside the folder: `./install.sh`.
 
 That installs the Python and UI pieces, compiles the OCR helper, and sets the server to run
 whenever you're logged in, at http://localhost:8765. To get a Dock icon, open that address in

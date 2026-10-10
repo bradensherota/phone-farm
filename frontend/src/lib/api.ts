@@ -138,12 +138,8 @@ export const ACTIONS: ActionMeta[] = [
   { action: "x_post", platform: "x", label: "Post", media: "any", link: false, rank: 0 },
 ];
 
-// Stories can be switched off per phone (phone settings → Stories). Off = no Story mode, no ★ story album,
-// no story options for that phone. Stored in settings as stories_off:<device_id> = "true".
-export const storiesOn = (settings: Record<string, string> | null | undefined, deviceId: string) => settings?.[`stories_off:${deviceId}`] !== "true";
-
-export function actionsFor(platform: Platform, stories = true): ActionMeta[] {
-  return ACTIONS.filter((a) => a.platform === platform && (stories || !a.action.endsWith("_story")));
+export function actionsFor(platform: Platform): ActionMeta[] {
+  return ACTIONS.filter((a) => a.platform === platform);
 }
 
 export function actionMeta(action: ActionKey): ActionMeta {

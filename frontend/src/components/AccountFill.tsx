@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, Device, Job, JobIn, Media } from "../lib/api";
-import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd, storiesOn } from "../lib/api";
+import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd } from "../lib/api";
 import { PlatformIcon, useConfirm, usePoll, useToast } from "./common";
 import { HoverSoundToggle, HoverThumb, hoverSoundOn, inAlbum } from "./MediaPicker";
 
@@ -32,8 +32,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const ttStories = settings?.tiktok_stories === "true";
   const requireBlocks = (settings?.require_blocks ?? "true") !== "false";
   const blockDays = Math.max(1, Number(settings?.block_days || 4) || 4);
-  const stories = storiesOn(settings, device.id);
-  const modes = useMemo(() => actionsFor(account.platform, stories).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories, stories]);
+  const modes = useMemo(() => actionsFor(account.platform).filter((a) => a.action !== "tt_story" || ttStories), [account.platform, ttStories]);
 
   const [items, setItems] = useState<Media[]>([]);
   const [existing, setExisting] = useState<Job[]>([]);
@@ -54,7 +53,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const [fillFrom, setFillFrom] = useState(() => (ymd(weekStart) > today ? ymd(weekStart) : today));
 
   const queueAlbum = device.queue_album || "";
-  const storyAlbum = stories ? device.story_album || "" : "";
+  const storyAlbum = ""; // the ★ story album is retired (2026-10-10): every clip, stories included, lives in the queue album
   const albumSorts = device.album_sorts || {};
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
   const curSlot = slotOf(mode);

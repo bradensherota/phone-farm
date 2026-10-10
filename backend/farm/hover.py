@@ -96,9 +96,9 @@ def warm_from_local_previews() -> int:
     return n
 
 
-def warm_device(manager, device_id: str, per_cycle: int = 6) -> int:
-    """Pull up to `per_cycle` album videos from the (plugged-in, idle) phone and make their hover
-    clips. Stops early the moment the phone gets busy."""
+def warm_device(manager, device_id: str, per_cycle: int = 500) -> int:
+    """Make hover clips for the album videos that don't have one yet, straight through, while the
+    phone is plugged in and idle. Stops the moment the phone gets busy (checked between clips)."""
     drv = manager.driver(device_id)
     if drv is None or getattr(drv, "kind", "") != "ios" or not hasattr(drv, "pull_file"):
         return 0
@@ -136,6 +136,14 @@ def warm_device(manager, device_id: str, per_cycle: int = 6) -> int:
         _set(row_id, str(out) if ok else SKIP)
         n += int(ok)
     return n
+
+
+_wake = threading.Event()
+
+
+def poke() -> None:
+    """Wake the warmer now (called after a sync finds new album clips)."""
+    _wake.set()
 
 
 def start_warmer(manager, interval_s: float = 45.0) -> None:
@@ -176,6 +184,7 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
                         log.info("%s: %d hover clip(s) made", did, n)
             except Exception:
                 log.exception("hover warmer")
-            time.sleep(interval_s)
+            _wake.wait(interval_s)  # or sooner, when a sync pokes us
+            _wake.clear()
 
     threading.Thread(target=loop, name="hover-warmer", daemon=True).start()

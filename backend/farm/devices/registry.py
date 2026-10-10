@@ -290,6 +290,11 @@ class DeviceManager:
                     resolve_pending(s, device_id)
             except Exception as e:
                 log.warning("%s: could not resolve pending story copies: %s", device_id, e)
+            try:
+                from ..hover import poke
+                poke()  # new album clips get their hover previews right away, not at the next tick
+            except Exception:
+                pass
 
     def _sync_media_items(self, drv, device_id: str, items, now, thumb_dir, albums_only: bool) -> int:
 

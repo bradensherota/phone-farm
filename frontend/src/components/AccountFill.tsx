@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, Device, Job, JobIn, Media } from "../lib/api";
-import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd } from "../lib/api";
+import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd, STORIES } from "../lib/api";
 import { PlatformIcon, useConfirm, usePoll, useToast } from "./common";
 import { HoverSoundToggle, HoverThumb, hoverSoundOn, inAlbum } from "./MediaPicker";
 
@@ -53,7 +53,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const [fillFrom, setFillFrom] = useState(() => (ymd(weekStart) > today ? ymd(weekStart) : today));
 
   const queueAlbum = device.queue_album || "";
-  const storyAlbum = device.story_album || "";
+  const storyAlbum = STORIES ? device.story_album || "" : "";
   const albumSorts = device.album_sorts || {};
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
   const curSlot = slotOf(mode);

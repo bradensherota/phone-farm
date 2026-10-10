@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Account, Device, Job, Media, Platform } from "../lib/api";
-import { actionMeta, api, fmtDateTime, ymd } from "../lib/api";
+import { actionMeta, api, fmtDateTime, ymd, STORIES } from "../lib/api";
 import { PhoneScreen, Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import { MediaPreview, RollGrid } from "../components/MediaPicker";
 import JobDetail from "../components/JobDetail";
@@ -117,7 +117,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
         <div className="field"><label>Queue album</label><input className="input" style={{ width: 130 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Photos album on this phone where you put the clips you plan. Reels, posts and stories are picked from here." /></div>
         <div className="field"><label>Passcode {device.has_passcode ? <span className="dim">(set)</span> : <span className="dim">(none)</span>}</label><input className="input" type="password" style={{ width: 100 }} placeholder={device.has_passcode ? "••••••" : "none"} autoComplete="off" onChange={(e) => setPasscode(e.target.value)} value={passcode} title="Lock-screen passcode the runner types to wake this phone. Stored only in this Mac's local database." /></div>
-        <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>
+        {STORIES && <div className="field"><label>Story album</label><input className="input" style={{ width: 120 }} value={form.story_album} placeholder="Stories" onChange={(e) => setForm({ ...form, story_album: e.target.value })} title="Photos album on this phone; items in it are picked from the album instead of Recents" /></div>}
         {autoStart && <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>}
         <div className="field"><label>Gap between actions (s)</label>
           <div className="row">
@@ -299,7 +299,7 @@ function RollTab({ device, onChanged }: { device: Device; onChanged: () => void 
         </span>
         <button className="btn sm" onClick={sync} disabled={syncing}>{syncing ? "Syncing…" : "Sync from phone"}</button>
       </div>
-      {items ? <RollGrid items={items} selectedId={null} onSelect={(m) => setPreview(m)} storyAlbum={device.story_album} /> : <div className="empty">Loading…</div>}
+      {items ? <RollGrid items={items} selectedId={null} onSelect={(m) => setPreview(m)} storyAlbum={STORIES ? device.story_album : ""} /> : <div className="empty">Loading…</div>}
       {preview && <MediaPreview media={preview} onClose={() => setPreview(null)} />}
     </div>
   );

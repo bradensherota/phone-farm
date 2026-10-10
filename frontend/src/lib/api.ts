@@ -138,8 +138,11 @@ export const ACTIONS: ActionMeta[] = [
   { action: "x_post", platform: "x", label: "Post", media: "any", link: false, rank: 0 },
 ];
 
+// Stories are switched off (2026-10-10): no Story mode, no ★ story album, no story options anywhere.
+export const STORIES = false;
+
 export function actionsFor(platform: Platform): ActionMeta[] {
-  return ACTIONS.filter((a) => a.platform === platform);
+  return ACTIONS.filter((a) => a.platform === platform && (STORIES || !a.action.endsWith("_story")));
 }
 
 export function actionMeta(action: ActionKey): ActionMeta {

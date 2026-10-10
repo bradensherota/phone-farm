@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Media } from "../lib/api";
-import { api, fmtDuration, HOVER_RATE, hoverUrl, thumbUrl } from "../lib/api";
+import { api, fmtDuration, HOVER_RATE, hoverUrl, thumbUrl, STORIES } from "../lib/api";
 import { useToast } from "./common";
 
 interface Props {
@@ -100,7 +100,8 @@ export function MediaPreview({ media, onUse, onClose }: { media: Media; onUse?: 
 export default function MediaPicker({ deviceId, deviceName, kind, selectedId, onSelect, onClose }: Props) {
   const [items, setItems] = useState<Media[]>([]);
   const [filter, setFilter] = useState<"all" | "video" | "photo">(kind === "video" ? "video" : "all");
-  const [storyAlbum, setStoryAlbum] = useState("");
+  const [storyAlbumRaw, setStoryAlbum] = useState("");
+  const storyAlbum = STORIES ? storyAlbumRaw : "";
   const [queueAlbum, setQueueAlbum] = useState("");
   const [albumSorts, setAlbumSorts] = useState<Record<string, { by: string; ascending: boolean }>>({});
   const [albumFilter, setAlbumFilter] = useState<"" | "queue" | "story">("queue");

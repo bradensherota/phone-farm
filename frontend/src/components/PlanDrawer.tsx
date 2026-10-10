@@ -147,6 +147,15 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                   {d.job?.locked && <span className="small" style={{ color: "var(--amber)" }} title={d.job.locked}>🔒 {d.job.locked}</span>}
                   {d.job && <button className="btn sm ghost" onClick={() => setDetail(d.job!)}>Details</button>}
                 </div>
+                {d.enabled && d.mirroredFrom && d.status !== "done" && (
+                  <div className="sec-body" style={{ paddingTop: 0 }}>
+                    <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                      <span className="small dim">Day</span>
+                      <input className="input" type="date" style={{ width: 160 }} value={d.run_date || date} disabled title={`This copy moves with the story on ${originHandle}: change the day there`} />
+                      <span className="small dim">moves with {originHandle}'s story — change the day there</span>
+                    </div>
+                  </div>
+                )}
                 {d.enabled && !locked && !d.mirroredFrom && (
                   <div className="sec-body" style={{ paddingTop: 0 }}>
                     <div className="row" style={{ alignItems: "center", gap: 8 }}>

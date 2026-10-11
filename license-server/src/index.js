@@ -3,7 +3,7 @@
 // once; after that Braden activates it (for good), or switches it off and on at will.
 // Admin routes need the ADMIN_TOKEN secret, which lives only on Braden's Mac.
 
-const TRIAL_DAYS = 7;
+const TRIAL_DAYS = 3;
 const DEFAULT_PHONES = 3;
 const DAY = 86400000;
 

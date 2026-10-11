@@ -18,7 +18,7 @@ It downloads the app into `~/phone-farm`, installs it, and sets the server to ru
 logged in, at http://localhost:8765. For a Dock icon, open that address in Chrome and use
 menu ⋮ → Cast, save and share → Install page as app. In Settings, put your name in "Your name".
 
-**Trial and activation.** A new Mac works for 7 days straight away. After that Braden activates it
+**Trial and activation.** A new Mac works for 3 days straight away. After that Braden activates it
 (the sidebar shows the trial days left, and the app says when it's waiting). Phones per Mac: 3 unless
 Braden sets more.
 

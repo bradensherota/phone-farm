@@ -204,7 +204,7 @@ def start_warmer(manager, interval_s: float = 45.0) -> None:
                     if time.time() - last_album_read.get(did, 0) >= every:
                         last_album_read[did] = time.time()
                         try:
-                            manager.sync_media(did, albums_only=True)
+                            manager.sync_media(did)  # full: album membership + thumbnails/hover clips for anything new (album items only)
                         except Exception as e:
                             log.warning("%s: idle album re-read failed: %s", did, e)
                     if did in manager.busy_devices():

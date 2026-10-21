@@ -40,7 +40,7 @@ def thumb(media_id: int, s: Session = Depends(get_session)):
         s.refresh(m)
         if resolve(m.thumb_path) is None:
             drv = manager.driver(m.device_id)
-            if drv is None or not drv.is_connected():
+            if drv is None or (not drv.is_connected() and not manager.on_usb(m.device_id)):
                 raise HTTPException(404, "phone not connected")
             out_dir = THUMB_DIR / m.device_id
             out_dir.mkdir(parents=True, exist_ok=True)

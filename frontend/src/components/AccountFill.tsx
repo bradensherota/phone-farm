@@ -201,7 +201,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   };
   const sync = () => {
     setSyncing(true);
-    api.syncDevice(device.id, true).then(setItems).catch((e) => toast(e.message, "err")).finally(() => setSyncing(false));
+    api.syncDevice(device.id).then(setItems).catch((e) => toast(e.message, "err")).finally(() => setSyncing(false));
   };
   const fromOptions = useMemo(() => { const o: string[] = []; for (let i = 0; i < 21; i++) o.push(ymd(addDays(new Date(), i))); if (!o.includes(fillFrom)) o.unshift(fillFrom); return o; }, [fillFrom]);
   const count = (a: ActionKey) => picks.filter((p) => p.action === a).length;
@@ -219,7 +219,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
           {orderNote && <span className="small dim">{orderNote}</span>}
           {videosOnly && <span className="pill">videos only</span>}
           <HoverSoundToggle value={sound} onChange={setSound} />
-          <button className="btn sm" onClick={sync} disabled={syncing} title="Re-read the phone's albums (fast; no thumbnails)">{syncing ? "Syncing…" : "Sync albums"}</button>
+          <button className="btn sm" onClick={sync} disabled={syncing} title="Re-read the phone's albums and make thumbnails for anything new">{syncing ? "Syncing…" : "Sync"}</button>
           <button className="btn sm ghost" onClick={close}>✕</button>
         </div>
 

@@ -26,8 +26,16 @@ Braden sets more.
 restarts; your data stays where it is. The installed version shows at the bottom-left of the sidebar.
 (`./update.sh` in the folder does the same from Terminal.)
 
-Per phone: Developer Mode on (Settings → Privacy & Security), Auto-Lock Never, plug in over
-USB, tap Trust, press **Find phones** in the app. The first connect builds and installs the runner
+**First phone, in order** (the app's phone card tells you which step you're on if one fails):
+
+1. Phone: Settings → Privacy & Security → **Developer Mode** on; Auto-Lock → Never. Plug in, tap **Trust**.
+2. Mac: Xcode → Settings → Accounts → sign in → **Manage Certificates…** → **+** → Apple Development.
+3. App: **Find phones**, then **Connect**. If the Mac asks for a keychain password, type your Mac
+   login password and click **Always Allow**.
+4. Phone: Settings → General → **VPN & Device Management** → tap your Apple ID → **Trust**. Press
+   Connect once more. (Free Apple IDs repeat only step 3 every 7 days, automatically.)
+
+Per phone after that: Developer Mode on, Auto-Lock Never, plug in over USB, tap Trust, press **Find phones** in the app. The first connect builds and installs the runner
 for that phone (2-5 min, phone unlocked). On a Mac that has never signed an app, Xcode first needs
 to create a certificate: open `~/PhoneFarm/WebDriverAgent/WebDriverAgent.xcodeproj`, select the
 WebDriverAgentRunner target → Signing & Capabilities → tick "Automatically manage signing" → pick

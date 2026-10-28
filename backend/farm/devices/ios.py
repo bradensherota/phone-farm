@@ -112,6 +112,27 @@ class IOSDriver(Driver):
         except Exception:
             return ""
 
+    # What the build/launch log means, in words a first-time user can act on
+    _EXPLAIN = (
+        (("has not been explicitly trusted", "untrusted developer", "could not be verified"),
+         "One step left, on the phone: Settings → General → VPN & Device Management → tap your Apple ID → Trust. Then press Connect."),
+        (("errsecinternalcomponent", "user interaction is not allowed", "unable to sign", "no signing certificate", "no identity found"),
+         "The Mac asked for your keychain password during the build. Press Connect again; when the prompt appears, type your Mac login password and click Always Allow."),
+        (("because the device is locked",), "Unlock the phone, then press Connect."),
+        (("developer mode",), "Turn on Developer Mode on the phone (Settings → Privacy & Security → Developer Mode), let it restart, then press Connect."),
+        (("not registered", "doesn't include the currently selected device", "no profiles"),
+         "This phone isn't in your signing profile yet. Press Rebuild runner with the phone unlocked."),
+        (("unable to find a destination", "timed out waiting for all destinations"),
+         "The Mac can't see the phone over USB. Check the cable, unlock the phone and tap Trust if it asks, then press Connect."),
+    )
+
+    def explain_failure(self) -> str:
+        tail = self._log_tail(600).lower()
+        for signs, text in self._EXPLAIN:
+            if any(s in tail for s in signs):
+                return text
+        return ""
+
     def rebuild_runner(self) -> None:
         """Build and install the runner for this phone with the Apple ID Xcode is signed into
         (tools/wda-build.sh). Phone must be plugged in and unlocked. Takes 2-5 minutes."""
@@ -129,7 +150,8 @@ class IOSDriver(Driver):
                                "Signing & Capabilities, tick 'Automatically manage signing' and pick your team. Then press Rebuild runner. "
                                "(Or enter your Team ID in Settings → Apple Team ID.)")
         if r.returncode != 0:
-            raise RuntimeError(f"Runner build failed (code {r.returncode}); see {self._log_path}. "
+            why = self.explain_failure()
+            raise RuntimeError(why or f"Runner build failed (code {r.returncode}); see {self._log_path}. "
                                "Is the phone plugged in and unlocked, with Developer Mode on?")
         self._rebuilt_at = time.time()
         log.info("%s: runner built", self.name)
@@ -172,10 +194,10 @@ class IOSDriver(Driver):
                         self._stop_processes()
                         self.rebuild_runner()
                         break
-                    raise RuntimeError(f"xcodebuild exited early (see {self._log_path})")
+                    raise RuntimeError(self.explain_failure() or f"xcodebuild exited early (see {self._log_path})")
                 time.sleep(2)
             else:
-                raise RuntimeError("WebDriverAgent did not come up within 90s")
+                raise RuntimeError(self.explain_failure() or "WebDriverAgent did not come up within 90s")
         # only reached after a rebuild: start the fresh runner (no second rebuild)
         self.connect(_retry_build=False)
 

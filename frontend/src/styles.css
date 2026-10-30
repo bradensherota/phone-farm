@@ -314,7 +314,7 @@ a { color: inherit; text-decoration: none; }
 .fill-mode .need { font-size: 11px; color: var(--amber); margin-left: 4px; }
 .fill-days .l.hollow { color: transparent; -webkit-text-stroke: 1px currentColor; }
 .fill-days .l.hollow.reel { -webkit-text-stroke-color: var(--red); } .fill-days .l.hollow.trial { -webkit-text-stroke-color: var(--amber); } .fill-days .l.hollow.story { -webkit-text-stroke-color: var(--blue); }
-.chip.locked { opacity: .7; border-left-style: dotted; }
+.chip.locked { }  /* locked chips look like any other; the padlock says it all */
 .chip .lock { font-size: 11px; flex: none; }
 .planner .locked-note { color: var(--amber); display: block; margin-top: 4px; cursor: help; }
 

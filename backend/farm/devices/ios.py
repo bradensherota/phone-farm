@@ -127,7 +127,12 @@ class IOSDriver(Driver):
     )
 
     def explain_failure(self) -> str:
-        tail = self._log_tail(600).lower()
+        tail = self._log_tail(1500)
+        # only the latest attempt: each xcodebuild run starts with its command line invocation
+        marker = "Command line invocation:"
+        if marker in tail:
+            tail = tail[tail.rindex(marker):]
+        tail = tail.lower()
         for signs, text in self._EXPLAIN:
             if any(s in tail for s in signs):
                 return text

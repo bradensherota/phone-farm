@@ -671,15 +671,14 @@ def ig_add_link_sticker(p: Phone, link: str, link_text: str) -> None:
             time.sleep(0.4)
         p.type(link_text, "sticker text")
     p.tap(name="Done", what="Done (link)")
-    p.wait(predicate="label BEGINSWITH 'Link Sticker'", what="link sticker on story", timeout=10)
-    # a real sticker on the canvas is ~250pt wide; ~90pt is the tray's chip, which is what is
-    # left when Instagram couldn't create the sticker (no connection). Stretching that chip
-    # throws the editor away, so wait for the real thing and give up cleanly if it never comes.
-    for _ in range(6):
-        e = p.el(predicate="label BEGINSWITH 'Link Sticker'").wait(timeout=2, raise_error=False)
-        if e is not None and e.bounds.width >= 150:
+    # created = the link form has closed and a sticker is on the canvas. (Size is no guide: a
+    # sticker with short or no text is small.) If the form is still up, Instagram couldn't
+    # create it, usually no connection; stretching the tray's chip would throw the editor away.
+    for _ in range(8):
+        form_open = p.exists(label="Add link", timeout=0.5) or p.exists(predicate="type == 'XCUIElementTypeTextField'", timeout=0.3)
+        if not form_open and p.exists(predicate="label BEGINSWITH 'Link Sticker'", timeout=1):
             break
-        time.sleep(1.5)
+        time.sleep(1.2)
     else:
         raise FlowError("The link sticker wasn't created (Instagram may have no connection right now); will try again")
     ig_place_link_sticker(p)
@@ -705,7 +704,8 @@ def ig_place_link_sticker(p: Phone) -> None:
     #    saturates it; a second one just shows the overshoot-and-snap-back animation.
     cx, cy, w0 = center(sticker())
     p.log("info", f"Pinch sticker to max (from {w0:.0f}pt)")
-    p.pinch_out(cx, cy, start_gap=40, end_gap=380)
+    # fingers start inside the sticker whatever its size (an icon-only one is ~50pt wide)
+    p.pinch_out(cx, cy, start_gap=max(12, min(40, w0 * 0.5)), end_gap=380)
     time.sleep(1.5)
 
     # 2) drag to the standard position on the story canvas
@@ -797,7 +797,8 @@ def ig_story(p: Phone, spec: ActionSpec):
             raise FlowError("Not on the story editor (run the 'pick' stage first)")
         if spec.link:
             if p.exists(predicate="label BEGINSWITH 'Link Sticker'", timeout=1.5):
-                p.log("info", "Link sticker is already on the story")
+                p.log("info", "Link sticker is already on the story; sizing and placing it")
+                ig_place_link_sticker(p)  # an earlier attempt may have stopped before the stretch
                 return
             ig_add_link_sticker(p, spec.link, spec.link_text)
 

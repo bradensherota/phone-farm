@@ -183,13 +183,20 @@ class DeviceManager:
             try:
                 drv.connect()
                 self.last_error.pop(device_id, None)
-                self.sync_media(device_id)
             except Exception as e:
                 log.warning("Device %s offline: %s", drv.name, e)
                 self.last_error[device_id] = str(e)
-            finally:
                 with self._lock:
                     self._connecting.discard(device_id)
+                return
+            # the runner is up: the phone counts as connected now. The roll read that follows can
+            # take minutes on a big library and must not keep the phone "connecting" meanwhile.
+            with self._lock:
+                self._connecting.discard(device_id)
+            try:
+                self.sync_media(device_id)
+            except Exception as e:
+                log.warning("%s: roll read after connect failed: %s", drv.name, e)
 
         threading.Thread(target=work, name=f"connect-{device_id}", daemon=True).start()
 

@@ -114,6 +114,8 @@ class IOSDriver(Driver):
 
     # What the build/launch log means, in words a first-time user can act on
     _EXPLAIN = (
+        (("maximum number of registered", "0xe8008012", "cannot be installed on this device"),
+         "Apple's limit: a free Apple ID can sign up to 3 iPhones, and this Mac's Apple ID already has 3. A 4th phone needs the paid Apple Developer Program ($99/year) on this Apple ID; after that, press Rebuild runner."),
         (("has not been explicitly trusted", "untrusted developer", "could not be verified"),
          "One step left, on the phone: Settings → General → VPN & Device Management → tap your Apple ID → Trust. Then press Connect."),
         (("errsecinternalcomponent", "user interaction is not allowed", "unable to sign", "no signing certificate", "no identity found"),

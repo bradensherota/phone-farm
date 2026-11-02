@@ -11,6 +11,8 @@ export interface Account {
   story_link: string;
   notes: string;
   sort_order: number;
+  reels_per_day: number; // the fill screen plans this many reels a day; "Run day" posts one per press
+  trials_per_day: number;
 }
 
 export interface Media {
@@ -182,8 +184,8 @@ export const api = {
   disconnectDevice: (id: string) => req<Device>(`/devices/${id}/disconnect`, { method: "POST" }),
   rebuildRunner: (id: string) => req<Device>(`/devices/${id}/rebuild-runner`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
-  startToday: () => req<{ device_id: string; name: string; started: number; connected: boolean; note: string; skipped?: string[] }[]>(`/devices/start-today`, { method: "POST" }),
-  runDay: (id: string, run_date: string) => req<{ started: number; skipped: string[] }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
+  startToday: () => req<{ device_id: string; name: string; started: number; connected: boolean; note: string; skipped?: string[]; remaining?: number }[]>(`/devices/start-today`, { method: "POST" }),
+  runDay: (id: string, run_date: string) => req<{ started: number; skipped: string[]; remaining: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
   wakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`),
   startWakeTest: (id: string, steps: number[]) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "POST", body: JSON.stringify({ steps }) }),
   cancelWakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "DELETE" }),

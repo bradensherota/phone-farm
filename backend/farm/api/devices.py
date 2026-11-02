@@ -129,10 +129,12 @@ def disconnect_device(device_id: str, s: Session = Depends(get_session)):
 
 @router.post("/start-today")
 def start_today(s: Session = Depends(get_session)):
-    """The morning button: every connected phone runs its whole queue for today, in order.
-    Phones that are paused are resumed; phones that aren't connected are skipped."""
+    """The morning button: every connected phone runs one round for today: the first reel, the
+    first trial reel and the story of each account. Extra reels planned on the same day wait for
+    "Run day". Phones that are paused are resumed; phones that aren't connected are skipped."""
     from datetime import datetime
     from ..license import allowed as _lic_allowed
+    from ..rounds import arm_round, remaining_after
     ok, why = _lic_allowed()
     if not ok:
         raise HTTPException(409, why)
@@ -144,15 +146,14 @@ def start_today(s: Session = Depends(get_session)):
     except Exception:
         plugged = set()
     for d in s.query(Device).filter(Device.kind != "sim").all():
-        jobs = (
-            s.query(Job)
-            .filter(Job.device_id == d.id, Job.run_date == today, Job.status.in_([JobStatus.scheduled, JobStatus.failed]))
-            .order_by(Job.sort_order, Job.id)
-            .all()
+        n_jobs = (
+            s.query(func.count(Job.id))
+            .filter(Job.device_id == d.id, Job.run_date == today, Job.status.in_([JobStatus.scheduled, JobStatus.failed, JobStatus.cancelled]))
+            .scalar() or 0
         )
         drv = manager.driver(d.id)
         connected = drv is not None and drv.is_connected()
-        if not jobs:
+        if not n_jobs:
             out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": connected, "note": "nothing planned today"})
             continue
         if not connected and d.parked and d.id in plugged:
@@ -161,66 +162,39 @@ def start_today(s: Session = Depends(get_session)):
         if not connected:
             out.append({"device_id": d.id, "name": d.name, "started": 0, "connected": False, "note": "not connected; plug it in and unlock it, then press again"})
             continue
-        from ..blocks import lock_reason
         d.paused = False
-        skipped: list[str] = []
-        started = 0
-        for j in jobs:
-            reason = lock_reason(s, j)
-            if reason:
-                skipped.append(reason)
-                continue
-            j.status = JobStatus.scheduled
-            j.attempts = 0
-            j.last_error = ""
-            j.last_stage, j.failed_stage = "", ""
-            j.run_at = now
-            s.add(JobLog(job_id=j.id, level="info", message="Started by 'Start today'"))
-            started += 1
+        started, skipped = arm_round(s, d.id, today, now, "Start today")
         s.commit()
         if started:
             runner.kick(d.id)
-        note = f"{len(skipped)} locked (plan 4 days in a row)" if skipped else ""
-        out.append({"device_id": d.id, "name": d.name, "started": started, "connected": True, "note": note, "skipped": skipped})
+        left = remaining_after(s, d.id, today)
+        notes = []
+        if left:
+            notes.append(f"{left} more wait for the next Run day")
+        if skipped:
+            notes.append(f"{len(skipped)} skipped")
+        out.append({"device_id": d.id, "name": d.name, "started": started, "connected": True, "note": "; ".join(notes), "skipped": skipped, "remaining": left})
     return out
 
 
 @router.post("/{device_id}/run-day")
 def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
-    """Start this phone's whole queue for `run_date` now: every job that hasn't posted yet
-    (scheduled, failed or cancelled) is re-armed in order and the worker is kicked."""
+    """Start one round of this phone's `run_date` now: for each account, the first reel, the first
+    trial reel and the story that haven't posted yet (failed or cancelled ones included) are armed
+    in order and the worker is kicked. Extra reels on the same day wait for the next press."""
     if s.get(Device, device_id) is None:
         raise HTTPException(404, "device not found")
     from datetime import datetime
     from ..license import allowed as _lic_allowed
+    from ..rounds import arm_round, remaining_after
     ok, why = _lic_allowed()
     if not ok:
         raise HTTPException(409, why)
-    jobs = (
-        s.query(Job)
-        .filter(Job.device_id == device_id, Job.run_date == run_date,
-                Job.status.in_([JobStatus.scheduled, JobStatus.failed, JobStatus.cancelled]))
-        .order_by(Job.sort_order, Job.id)
-        .all()
-    )
-    from ..blocks import lock_reason
-    now = datetime.now()
-    skipped: list[str] = []
-    started = 0
-    for j in jobs:
-        reason = lock_reason(s, j)
-        if reason:
-            skipped.append(reason)
-            continue
-        j.status = JobStatus.scheduled
-        j.attempts = 0
-        j.last_error = ""
-        j.run_at = now
-        started += 1
+    started, skipped = arm_round(s, device_id, run_date, datetime.now(), "Run day")
     s.commit()
     if started:
         runner.kick(device_id)
-    return {"started": started, "skipped": skipped}
+    return {"started": started, "skipped": skipped, "remaining": remaining_after(s, device_id, run_date)}
 
 
 @router.post("/{device_id}/stop")

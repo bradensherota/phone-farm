@@ -19,6 +19,8 @@ class AccountOut(ORM):
     story_link: str
     notes: str
     sort_order: int
+    reels_per_day: int = 1
+    trials_per_day: int = 1
 
 
 class AccountIn(BaseModel):
@@ -37,6 +39,8 @@ class AccountPatch(BaseModel):
     notes: str | None = None
     sort_order: int | None = None
     device_id: str | None = None
+    reels_per_day: int | None = None
+    trials_per_day: int | None = None
 
 
 # ---- media -----------------------------------------------------------------

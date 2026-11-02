@@ -28,10 +28,17 @@ export default function PlannerPage() {
   const nextOf = (a: Account) => { const i = flat.findIndex((x) => x.account.id === a.id); return i >= 0 && i + 1 < flat.length ? flat[i + 1] : null; };
   const toast = useToast();
   const ask = useConfirm();
-  const runDay = async (device: Device, day: string, count: number) => {
-    if (!(await ask(`Start ${device.name}'s whole queue for ${day} now?\n${count} action(s) will run in order, real posts. The phone is woken first.`, "Run the day"))) return;
-    try { const r = await api.runDay(device.id, day); toast(`Started ${r.started} action(s) on ${device.name}${r.skipped?.length ? `; ${r.skipped.length} locked (plan 4 days in a row)` : ""}`, r.started ? "ok" : "err"); reload(); }
-    catch (e: any) { toast(e.message, "err"); }
+  const runDay = async (device: Device, day: string, count: number, later: number) => {
+    const extra = later ? `\n${later} more reel${later === 1 ? "" : "s"} wait for the next press.` : "";
+    if (!(await ask(`Start ${device.name}'s next round for ${day} now?\n${count} action(s) will run in order, real posts. The phone is woken first.${extra}`, "Run the day"))) return;
+    try {
+      const r = await api.runDay(device.id, day);
+      const bits = [`Started ${r.started} action(s) on ${device.name}`];
+      if (r.remaining) bits.push(`${r.remaining} more wait for the next Run day`);
+      if (r.skipped?.length) bits.push(r.skipped.length <= 2 ? r.skipped.join("; ") : `${r.skipped.length} skipped`);
+      toast(bits.join(" · "), r.started ? "ok" : "err");
+      reload();
+    } catch (e: any) { toast(e.message, "err"); }
   };
 
   const byCell = useMemo(() => {
@@ -109,13 +116,27 @@ export default function PlannerPage() {
   );
 }
 
+const kindOf = (a: string) => (a === "ig_trial" ? "trial" : a.endsWith("_story") ? "story" : "reel");
+/** The next round of a day's unposted jobs: the first of each kind per account (queue order). */
+function roundOf(jobs: Job[]): Job[] {
+  const seen = new Set<string>();
+  const out: Job[] = [];
+  for (const j of [...jobs].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)) {
+    const k = `${j.account_id}:${kindOf(j.action)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(j);
+  }
+  return out;
+}
+
 function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, setStart, runDay, autoStart }: {
   device: Device; days: Date[]; today: string; byCell: Map<string, Job[]>;
   onPick: (a: Account, date: string) => void;
   onFill: (a: Account) => void;
   startFor: (deviceId: string, day: string) => string;
   setStart: (deviceId: string, day: string, value: string) => Promise<void>;
-  runDay: (device: Device, day: string, count: number) => Promise<void>;
+  runDay: (device: Device, day: string, count: number, later: number) => Promise<void>;
   autoStart: boolean;
 }) {
   const accounts = device.accounts.filter((a) => a.status !== "banned");
@@ -131,8 +152,11 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
           const k = ymd(d);
           const v = startFor(device.id, k);
           const cellJobs = accounts.flatMap((a) => (byCell.get(`${a.id}:${k}`) || []).filter((j) => j.status !== "done" && j.status !== "running"));
-          const pending = cellJobs.filter((j) => !j.locked).length;
-          const lockedJobs = cellJobs.filter((j) => j.locked);
+          // one round per press: the first unposted of each kind per account; the rest wait
+          const round = roundOf(cellJobs);
+          const pending = round.filter((j) => !j.locked).length;
+          const later = cellJobs.length - round.length;
+          const lockedJobs = round.filter((j) => j.locked);
           return (
             <td key={k} className="start-cell">
               {autoStart && (
@@ -142,7 +166,7 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
                 </select>
               )}
               {pending > 0 && device.kind !== "sim" && (
-                <button className="btn sm run-day" title="Run this day's whole queue on this phone now, in order" onClick={() => runDay(device, k, pending)}>▶ Run day ({pending})</button>
+                <button className="btn sm run-day" title={later ? `Run the next round on this phone now: one reel, one trial and the story per account. ${later} more wait for the next press.` : "Run this day's queue on this phone now, in order"} onClick={() => runDay(device, k, pending, later)}>▶ Run day ({pending}{later ? ` +${later}` : ""})</button>
               )}
               {lockedJobs.length > 0 && <span className="small locked-note" title={lockedJobs.map((j) => j.locked).join("\n")}>🔒 {lockedJobs.length} locked</span>}
             </td>

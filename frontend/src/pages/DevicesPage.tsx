@@ -22,8 +22,9 @@ export default function DevicesPage() {
       const r = await api.startToday();
       const started = r.filter((x) => x.started > 0);
       const skipped = r.filter((x) => x.note && !x.note.startsWith("nothing"));
+      const later = r.reduce((n, x) => n + (x.remaining || 0), 0);
       const msg = [
-        started.length ? `Started ${started.map((x) => `${x.name} (${x.started})`).join(", ")}` : "Nothing to start",
+        started.length ? `Started ${started.map((x) => `${x.name} (${x.started})`).join(", ")}${later ? ` · ${later} more wait for Run day` : ""}` : "Nothing to start",
         skipped.length ? `${skipped.map((x) => `${x.name}: ${x.note}`).join("; ")}` : "",
       ].filter(Boolean).join(". ");
       toast(msg, started.length ? "ok" : "err");
@@ -47,7 +48,7 @@ export default function DevicesPage() {
           <div className="stat"><span className="dim small">Today</span><b>{totals.done}/{totals.total}</b></div>
           <div className="stat"><span className="dim small">Failed</span><b style={{ color: totals.failed ? "var(--red)" : undefined }}>{totals.failed}</b></div>
           {settings && (settings.dry_run === "true" ? <Pill kind="running" title="Flows stop before the final Post / Share">DRY RUN</Pill> : <Pill kind="failed" title="Flows post for real">LIVE</Pill>)}
-          <button className="btn primary start-today" title="Run every connected phone's queue for today, in order. Plug the phones in and unlock them first." onClick={startToday}>▶ Start today</button>
+          <button className="btn primary start-today" title="Run today's first round on every connected phone: one reel, one trial and the story per account, in order. Extra reels wait for Run day. Plug the phones in and unlock them first." onClick={startToday}>▶ Start today</button>
           <button className="btn" onClick={async () => { await api.discoverDevices(); toast("Looking for phones over USB…"); reload(); }}>Find phones</button>
           <button className={`btn ${enabled ? "" : "primary"}`} onClick={toggleRunner}>{enabled ? "Pause runner" : "Resume runner"}</button>
         </div>

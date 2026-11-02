@@ -101,6 +101,10 @@ class Account(Base):
     story_link: Mapped[str] = mapped_column(String, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # how many reels / trial reels the fill screen plans per day (stories are always one a day);
+    # extra ones wait their turn: "Run day" starts one of each kind per press
+    reels_per_day: Mapped[int] = mapped_column(Integer, default=1)
+    trials_per_day: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     device: Mapped[Device] = relationship(back_populates="accounts")

@@ -54,6 +54,8 @@ _ADDED_COLUMNS = [
     ("jobs", "origin_media_id", "INTEGER"),
     ("devices", "parked", "BOOLEAN NOT NULL DEFAULT 0"),
     ("media", "hover_path", "VARCHAR NOT NULL DEFAULT ''"),
+    ("accounts", "reels_per_day", "INTEGER NOT NULL DEFAULT 1"),
+    ("accounts", "trials_per_day", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
 

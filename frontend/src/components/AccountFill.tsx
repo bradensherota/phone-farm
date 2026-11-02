@@ -51,6 +51,16 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const [syncing, setSyncing] = useState(false);
   const today = ymd(new Date());
   const [fillFrom, setFillFrom] = useState(() => (ymd(weekStart) > today ? ymd(weekStart) : today));
+  // how many of a kind land on one day (stories: always one). Remembered on the account.
+  const [perDayState, setPerDayState] = useState<{ reel: number; trial: number }>({ reel: account.reels_per_day || 1, trial: account.trials_per_day || 1 });
+  useEffect(() => { setPerDayState({ reel: account.reels_per_day || 1, trial: account.trials_per_day || 1 }); }, [account.id]);
+  const perDay = (action: ActionKey) => { const s = slotOf(action); return s === "story" ? 1 : perDayState[s]; };
+  const setPerDay = (action: ActionKey, n: number) => {
+    const s = slotOf(action); if (s === "story") return;
+    n = Math.max(1, Math.min(5, n));
+    setPerDayState((v) => ({ ...v, [s]: n }));
+    api.patchAccount(account.id, s === "reel" ? { reels_per_day: n } : { trials_per_day: n }).then(() => onSaved()).catch((e) => toast(e.message, "err"));
+  };
 
   const queueAlbum = device.queue_album || "";
   const storyAlbum = ""; // the ★ story album is retired (2026-10-10): every clip, stories included, lives in the queue album
@@ -86,26 +96,38 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   }, [items, videosOnly, activeAlbum, albumSorts]);
   const orderNote = activeAlbum ? ((albumSorts[activeAlbum.trim()]?.ascending ?? true) ? "oldest first, as on the phone" : "newest first, as on the phone") : "";
 
-  // where each pick lands: per kind, the next day from `fillFrom` with nothing of that kind yet
-  const taken = useMemo(() => {
-    const m = new Map<string, Set<ActionKey>>();
-    for (const j of existing) { if (!m.has(j.run_date)) m.set(j.run_date, new Set()); m.get(j.run_date)!.add(j.action); }
+  // where each pick lands: per kind, the next day from `fillFrom` that still has room for that
+  // kind (`perDay` of them a day; a day with a cancelled one doesn't count as taken)
+  const takenCount = useMemo(() => {
+    const m = new Map<string, Map<ActionKey, number>>();
+    for (const j of existing) {
+      if (j.status === "cancelled") continue;
+      if (!m.has(j.run_date)) m.set(j.run_date, new Map());
+      const d = m.get(j.run_date)!; d.set(j.action, (d.get(j.action) || 0) + 1);
+    }
     return m;
   }, [existing]);
+  const taken = useMemo(() => {
+    const m = new Map<string, Set<ActionKey>>();
+    for (const [day, d] of takenCount) m.set(day, new Set(d.keys()));
+    return m;
+  }, [takenCount]);
   const plan = useMemo(() => {
     const out = new Map<number, { day: string; n: number }>();
     for (const a of modes) {
+      const room = perDay(a.action);
       let cursor = parseYmd(fillFrom);
+      let onDay = 0; // picks already placed on `cursor`
       let n = 0;
       for (const p of picks) {
         if (p.action !== a.action) continue;
-        while (taken.get(ymd(cursor))?.has(a.action)) cursor = addDays(cursor, 1);
+        while ((takenCount.get(ymd(cursor))?.get(a.action) || 0) + onDay >= room) { cursor = addDays(cursor, 1); onDay = 0; }
         out.set(p.media.id, { day: ymd(cursor), n: ++n });
-        cursor = addDays(cursor, 1);
+        onDay++;
       }
     }
     return out;
-  }, [picks, taken, fillFrom, modes]);
+  }, [picks, takenCount, fillFrom, modes, perDayState]);
   const existingByMedia = useMemo(() => {
     const m = new Map<number, Job>();
     for (const j of [...existing].sort((a, b) => a.run_date.localeCompare(b.run_date))) if (j.media_id !== null && !m.has(j.media_id)) m.set(j.media_id, j);
@@ -126,6 +148,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
     for (const p of picks) { const v = plan.get(p.media.id); if (!v) continue; if (!m.has(v.day)) m.set(v.day, new Set()); m.get(v.day)!.add(p.action); }
     return m;
   }, [picks, plan]);
+  const countOn = (d: string, a: ActionKey) => (takenCount.get(d)?.get(a) || 0) + picks.filter((p) => p.action === a && plan.get(p.media.id)?.day === d).length;
 
   // blocks: per kind, the days it is (or will be) planned on; a day is "complete" when it sits in a
   // run of at least `blockDays` consecutive days. New picks can't be saved until their run is complete.
@@ -227,9 +250,16 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
           {modes.map((a) => (
             <button key={a.action} className={`fill-mode ${slotOf(a.action)} ${mode === a.action ? "active" : ""}`} onClick={() => setMode(a.action)} title={`Tap clips to plan them as ${a.label.toLowerCase()}s, in the order you tap${requireBlocks ? `. ${a.label}s run only in blocks of ${blockDays} days in a row` : ""}`}>
               {a.label} <span className="n">{count(a.action)}</span>
-              {shortfall.has(a.action) && <span className="need">pick {shortfall.get(a.action)} more</span>}
+              {shortfall.has(a.action) && <span className="need">{shortfall.get(a.action)} more day{shortfall.get(a.action) === 1 ? "" : "s"}{perDay(a.action) > 1 ? ` (${shortfall.get(a.action)! * perDay(a.action)} clips)` : ""}</span>}
             </button>
           ))}
+          {curSlot !== "story" && (
+            <span className="per-day" title={`How many ${modes.find((m) => m.action === mode)?.label.toLowerCase()}s land on one day. They post one per "Run day" press: the first with the morning round, the next each time you press again.`}>
+              <button className="btn sm ghost" onClick={() => setPerDay(mode, perDay(mode) - 1)} disabled={perDay(mode) <= 1}>−</button>
+              <b>×{perDay(mode)}</b> a day
+              <button className="btn sm ghost" onClick={() => setPerDay(mode, perDay(mode) + 1)} disabled={perDay(mode) >= 5}>+</button>
+            </span>
+          )}
           {curSlot === "story" && (
             <>
               <label className="switch small" title="Also plan this story on the other accounts of this phone (each with its own link)">
@@ -262,7 +292,8 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
                 const isNew = newOn.get(d)?.has(a.action);
                 const has = taken.get(d)?.has(a.action);
                 const hollow = (isNew || has) && !complete(a.action, d);
-                return <span key={a.action} className={`l ${isNew ? s : has ? `${s} existing` : "none"} ${hollow ? "hollow" : ""}`} title={hollow ? `${a.label}s on ${dayLabel(d)} are locked until this account has ${blockDays} days of them in a row` : undefined}>{isNew || has ? LETTER[s] : "·"}</span>;
+                const n = isNew || has ? countOn(d, a.action) : 0;
+                return <span key={a.action} className={`l ${isNew ? s : has ? `${s} existing` : "none"} ${hollow ? "hollow" : ""} ${n > 1 ? "multi" : ""}`} title={hollow ? `${a.label}s on ${dayLabel(d)} are locked until this account has ${blockDays} days of them in a row` : n > 1 ? `${n} ${a.label.toLowerCase()}s on ${dayLabel(d)}: one per "Run day" press` : undefined}>{isNew || has ? `${LETTER[s]}${n > 1 ? n : ""}` : "·"}</span>;
               })}
             </span>
           ))}
@@ -324,12 +355,12 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
         <div className="modal-foot">
           <span className="dim small grow">
             {shortfall.size > 0
-              ? <b style={{ color: "var(--amber)" }}>{[...shortfall.entries()].map(([a, n]) => `${modes.find((m) => m.action === a)?.label}s: pick ${n} more`).join(" · ")} — {blockDays} days in a row unlock a kind.</b>
+              ? <b style={{ color: "var(--amber)" }}>{[...shortfall.entries()].map(([a, n]) => `${modes.find((m) => m.action === a)?.label}s: ${n} more day${n === 1 ? "" : "s"}${perDay(a) > 1 ? ` (${n * perDay(a)} clips)` : ""}`).join(" · ")} — {blockDays} days in a row unlock a kind.</b>
               : <>Tap a clip to plan it as the active kind; tap again to remove it. Each kind fills its own empty days from {dayLabel(fillFrom)} on. Dashed tiles are already planned.{requireBlocks ? ` Hollow letters are locked until ${blockDays} days in a row.` : ""}</>}
             {(() => { const n = picks.filter((p) => !inAlbum(p.media, queueAlbum) && !inAlbum(p.media, storyAlbum)).length; return n ? <b style={{ color: "var(--amber)" }}> {n} pick{n === 1 ? " isn't" : "s aren't"} in {queueAlbum || "the album"} yet.</b> : null; })()}
           </span>
           <button className="btn ghost" onClick={close}>Cancel</button>
-          <button className="btn primary" disabled={saving || !canSave} title={shortfall.size ? `Complete the block first: ${[...shortfall.entries()].map(([a, n]) => `${n} more ${modes.find((m) => m.action === a)?.label.toLowerCase()}(s)`).join(", ")}` : undefined} onClick={() => save(false)}>{saving ? "Saving…" : `Save ${picks.length || ""}`.trim()}</button>
+          <button className="btn primary" disabled={saving || !canSave} title={shortfall.size ? `Complete the block first: ${[...shortfall.entries()].map(([a, n]) => `${n} more day(s) of ${modes.find((m) => m.action === a)?.label.toLowerCase()}s`).join(", ")}` : undefined} onClick={() => save(false)}>{saving ? "Saving…" : `Save ${picks.length || ""}`.trim()}</button>
           {next && <button className="btn" disabled={saving || (picks.length > 0 && !canSave)} onClick={() => save(true)} title={`Save, then open @${next.account.handle}`}>{picks.length ? "Save & next" : "Next"} → @{next.account.handle}</button>}
         </div>
       </div>

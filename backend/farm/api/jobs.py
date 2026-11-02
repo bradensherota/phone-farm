@@ -121,6 +121,14 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
         else:
             job = Job(account_id=account.id, device_id=account.device_id, action=action)
             s.add(job)
+        if meta["label"] == "Story" and not origin_posted:
+            # one story a day per account: a second one would post over the first
+            dup = s.query(Job).filter(
+                Job.account_id == account.id, Job.run_date == item.run_date, Job.action == action,
+                Job.status != JobStatus.cancelled, Job.id != (job.id or -1),
+            ).first()
+            if dup is not None:
+                raise HTTPException(409, f"@{account.handle} already has a story on {item.run_date.strftime('%a %-d %b')}; one story a day. Change that one instead.")
 
         if not origin_posted:
             job.account_id = account.id

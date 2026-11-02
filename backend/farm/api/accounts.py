@@ -47,6 +47,9 @@ def patch_account(account_id: int, body: AccountPatch, s: Session = Depends(get_
         data["handle"] = data["handle"].lstrip("@")
     if "device_id" in data and s.get(Device, data["device_id"]) is None:
         raise HTTPException(404, "device not found")
+    for k in ("reels_per_day", "trials_per_day"):
+        if k in data:
+            data[k] = max(1, min(5, int(data[k] or 1)))
     old_link = a.story_link
     for k, v in data.items():
         setattr(a, k, v)

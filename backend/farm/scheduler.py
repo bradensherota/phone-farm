@@ -62,7 +62,14 @@ def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
         .order_by(Job.run_date, Job.sort_order, Job.id)
     )
     from .blocks import lock_reason
-    return [j for j in q.all() if not lock_reason(s, j)]  # a locked job never runs on its own
+    from .rounds import first_in_line
+    rows = q.all()
+    if auto and any(j.run_at is None for j in rows):
+        # the routine start fires round one only: the first planned job of each account+kind
+        # line. Extra reels planned on the same day wait for "Run day" or a time of their own
+        firsts = first_in_line(s, device.id, today)
+        rows = [j for j in rows if j.run_at is not None or j.id in firsts]
+    return [j for j in rows if not lock_reason(s, j)]  # a locked job never runs on its own
 
 
 def next_run_for(job: Job, device: Device, s: Session | None = None) -> datetime:
@@ -250,8 +257,13 @@ class Runner:
                     if not jobs:
                         # done for real only when nothing of today's is still waiting (a retry
                         # due in a few minutes keeps the runner up)
-                        pending = s.query(Job).filter(Job.device_id == device_id, Job.run_date == date.today(),
-                                                      Job.status == JobStatus.scheduled).count()
+                        # jobs waiting for a later round (planned, never armed) don't keep it up
+                        from .rounds import first_in_line
+                        auto = settings_mod.as_bool(settings_mod.get("auto_start", "false"))
+                        firsts = first_in_line(s, device_id, date.today()) if auto else set()
+                        pending = sum(1 for j in s.query(Job).filter(Job.device_id == device_id, Job.run_date == date.today(),
+                                                                     Job.status == JobStatus.scheduled).all()
+                                      if j.run_at is not None or j.id in firsts)
                         drained = not first and pending == 0
                         return
                     job_id = jobs[0].id

@@ -47,12 +47,14 @@ def _stored() -> dict:
 
 
 def status() -> dict:
-    """What this Mac may do right now, from the last answer (trial end enforced even offline)."""
+    """What this Mac may do right now, from the last answer (trial and plan ends enforced even offline)."""
     s = _stored()
     if not s:
         return {"state": "unknown", "active": True, "message": "", "max_phones": DEFAULT_PHONES, "trial_until": None, "checked_at": None}
     if s.get("state") == "trial" and s.get("trial_until") and time.time() * 1000 > float(s["trial_until"]):
         s = {**s, "state": "expired", "active": False, "message": "Your trial is over. Ask Braden to activate Phone Farm on this Mac."}
+    if s.get("state") == "plan" and s.get("plan_until") and time.time() * 1000 > float(s["plan_until"]):
+        s = {**s, "state": "plan_ended", "active": False, "message": "Your plan has ended. Ask Braden to renew Phone Farm on this Mac."}
     return s
 
 

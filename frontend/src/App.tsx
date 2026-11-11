@@ -47,7 +47,7 @@ function PausedOverlay() {
   const [note, setNote] = useState("");
   const lic = runner?.license;
   if (!lic || lic.active) return null;
-  const title = lic.state === "expired" ? "Trial Over" : "Service Paused";
+  const title = lic.state === "expired" ? "Trial Over" : lic.state === "plan_ended" ? "Plan Ended" : "Service Paused";
   const check = async () => {
     setChecking(true); setNote("");
     try { const r = await api.licenseCheckin(); setNote(r.error ? r.error : r.active ? "Active again. One moment…" : "Still paused."); reload(); }

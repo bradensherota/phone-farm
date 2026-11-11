@@ -5,6 +5,7 @@
 #   tools/license.sh off <who>       pause until "on"
 #   tools/license.sh limit <who> <n> phones allowed
 #   tools/license.sh trial <who> <days>
+#   tools/license.sh plan <who> <days>   paid plan: ends <days> from now (or from its current end if renewed early)
 #   tools/license.sh name <who> "<name>"
 #   tools/license.sh delete <mac_id>
 # <who> = a person's name, Mac name or id (prefix is enough).
@@ -24,6 +25,7 @@ if not d["macs"]: print("nobody has checked in yet")
 for r in d["macs"]:
     state = r["state"]
     if state == "trial": state += " (%d d left)" % max(0, round((r["trial_until"] - now) / 86400000))
+    if state == "plan": state += " (%d d left)" % max(0, round(((r.get("plan_until") or 0) - now) / 86400000))
     name = r.get("name") or "?"; mac = r.get("mac_name") or ""
     print(f"{name:16} {mac:24} {state:18} phones {r.get('phones', 0)}/{r.get('max_phones')}   seen {ago(r.get('last_seen'))}   v{r.get('version', '')}   id {r['mac_id']}")
 PY
@@ -34,6 +36,9 @@ r = json.load(sys.stdin)
 if "error" in r:
     print("error:", r["error"]); sys.exit(1)
 name = r.get("name") or "?"; mac = r.get("mac_name") or ""; msg = r.get("message") or ""
+if r["state"] == "plan" and r.get("plan_until"):
+    import datetime
+    msg = "plan ends " + datetime.datetime.fromtimestamp(r["plan_until"] / 1000).strftime("%a %b %-d, %-I:%M %p")
 print(name + " · " + mac + " · " + r["state"] + " · " + str(r.get("max_phones")) + " phones" + (" · " + msg if msg else ""))'; }
 case "${1:-list}" in
   list)
@@ -42,7 +47,8 @@ case "${1:-list}" in
   off)    set_ "{\"who\":\"$2\",\"state\":\"off\"}" ;;
   limit)  set_ "{\"who\":\"$2\",\"max_phones\":$3}" ;;
   trial)  set_ "{\"who\":\"$2\",\"trial_days\":$3}" ;;
+  plan)   set_ "{\"who\":\"$2\",\"plan_days\":${3:-30}}" ;;
   name)   set_ "{\"who\":\"$2\",\"name\":\"$3\"}" ;;
   delete) api -X POST "$URL/v1/admin/delete" -d "{\"mac_id\":\"$2\"}"; echo ;;
-  *) echo "usage: license.sh list | on <who> | off <who> | limit <who> <n> | trial <who> <days> | name <who> <name> | delete <mac_id>" >&2; exit 2 ;;
+  *) echo "usage: license.sh list | on <who> | off <who> | limit <who> <n> | trial <who> <days> | plan <who> [days] | name <who> <name> | delete <mac_id>" >&2; exit 2 ;;
 esac

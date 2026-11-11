@@ -1,6 +1,7 @@
 // Phone Farm license service (Cloudflare Worker + KV).
-// Every copy of the app checks in with its Mac's hardware id. A new Mac gets a 7-day trial at
-// once; after that Braden activates it (for good), or switches it off and on at will.
+// Every copy of the app checks in with its Mac's hardware id. A new Mac gets a short trial at
+// once; after that Braden puts it on a paid plan with an end date (renewed month by month),
+// activates it for good, or switches it off and on at will.
 // Admin routes need the ADMIN_TOKEN secret, which lives only on Braden's Mac.
 
 const TRIAL_DAYS = 3;
@@ -12,9 +13,14 @@ const json = (o, status = 200) => new Response(JSON.stringify(o), { status, head
 function effective(r, now) {
   let state = r.state;
   if (state === "trial" && now > r.trial_until) state = "expired";
-  const active = state === "trial" || state === "active";
+  if (state === "plan" && now > (r.plan_until || 0)) state = "plan_ended";
+  const active = state === "trial" || state === "active" || state === "plan";
   const daysLeft = Math.max(0, Math.ceil((r.trial_until - now) / DAY));
+  const planLeft = Math.max(0, Math.ceil(((r.plan_until || 0) - now) / DAY));
+  // a paid plan is quiet until its last days
   const message = state === "trial" ? `Trial: ${daysLeft} day${daysLeft === 1 ? "" : "s"} left` :
+    state === "plan" ? (planLeft <= 5 ? `Plan: ${planLeft} day${planLeft === 1 ? "" : "s"} left` : "") :
+    state === "plan_ended" ? "Your plan has ended. Ask Braden to renew Phone Farm on this Mac." :
     state === "expired" ? "Your trial is over. Ask Braden to activate Phone Farm on this Mac." :
     state === "off" ? "Phone Farm is paused on this Mac by Braden." : "";
   return { ...r, state, active, message };
@@ -54,7 +60,7 @@ export default {
       r.version = String(b.version || "").slice(0, 40);
       await env.LICENSES.put(key, JSON.stringify(r));
       const e = effective(r, now);
-      return json({ state: e.state, active: e.active, max_phones: r.max_phones, trial_until: r.trial_until, message: e.message, now });
+      return json({ state: e.state, active: e.active, max_phones: r.max_phones, trial_until: r.trial_until, plan_until: r.plan_until || null, message: e.message, now });
     }
 
     if (!url.pathname.startsWith("/v1/admin/")) return json({ error: "not found" }, 404);
@@ -76,6 +82,12 @@ export default {
       if (b.state && ["active", "off", "trial"].includes(b.state)) r.state = b.state;
       if (b.max_phones != null) r.max_phones = Math.max(0, Number(b.max_phones) || 0);
       if (b.trial_days != null) { r.state = "trial"; r.trial_until = now + Number(b.trial_days) * DAY; }
+      if (b.plan_days != null) {
+        // a paid plan: runs `plan_days` from now, or from its current end when renewed early
+        const base = r.state === "plan" && (r.plan_until || 0) > now ? r.plan_until : now;
+        r.state = "plan";
+        r.plan_until = base + Number(b.plan_days) * DAY;
+      }
       if (b.name) r.name = String(b.name).slice(0, 60);
       await env.LICENSES.put("mac:" + r.mac_id, JSON.stringify(r));
       return json(effective(r, now));

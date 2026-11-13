@@ -185,7 +185,7 @@ export const api = {
   rebuildRunner: (id: string) => req<Device>(`/devices/${id}/rebuild-runner`, { method: "POST" }),
   prepareDevice: (id: string, days = 7) => req<{ album: string; added: number; pending: number; message: string }>(`/devices/${id}/prepare?days=${days}`, { method: "POST" }),
   startToday: () => req<{ device_id: string; name: string; started: number; connected: boolean; note: string; skipped?: string[]; remaining?: number }[]>(`/devices/start-today`, { method: "POST" }),
-  runDay: (id: string, run_date: string) => req<{ started: number; skipped: string[]; remaining: number }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
+  runDay: (id: string, run_date: string) => req<{ started: number; skipped: string[]; remaining: number; resumed?: boolean }>(`/devices/${id}/run-day?run_date=${run_date}`, { method: "POST" }),
   wakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`),
   startWakeTest: (id: string, steps: number[]) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "POST", body: JSON.stringify({ steps }) }),
   cancelWakeTest: (id: string) => req<WakeTest>(`/devices/${id}/wake-test`, { method: "DELETE" }),

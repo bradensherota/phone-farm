@@ -10,8 +10,10 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
-from .blocks import LABEL, kind_of, lock_reason
+from .blocks import kind_of, lock_reason
 from .models import Job, JobLog, JobStatus
+
+ONE = {"reel": "Reel", "trial": "Trial reel", "story": "Story"}
 
 
 def line_heads(s: Session, device_id: str, day: date) -> dict[int, Job]:
@@ -64,7 +66,7 @@ def arm_round(s: Session, device_id: str, day: date, now: datetime, by: str) -> 
     started = 0
     for j in line_heads(s, device_id, day).values():
         handle = j.account.handle if j.account is not None else "?"
-        what = LABEL[kind_of(j.action)][:-1] if LABEL[kind_of(j.action)].endswith("s") else LABEL[kind_of(j.action)]
+        what = ONE.get(kind_of(j.action), "Post")
         if j.status == JobStatus.running:
             skipped.append(f"{what} on @{handle} is still running")
             continue

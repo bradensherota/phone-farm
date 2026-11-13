@@ -172,7 +172,7 @@ def start_today(s: Session = Depends(get_session)):
         if left:
             notes.append(f"{left} more wait for the next Run day")
         if skipped:
-            notes.append(f"{len(skipped)} skipped")
+            notes.append(skipped[0] if len(skipped) == 1 else f"{skipped[0]}, and {len(skipped) - 1} more skipped")
         out.append({"device_id": d.id, "name": d.name, "started": started, "connected": True, "note": "; ".join(notes), "skipped": skipped, "remaining": left})
     return out
 
@@ -181,8 +181,10 @@ def start_today(s: Session = Depends(get_session)):
 def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
     """Start one round of this phone's `run_date` now: for each account, the first reel, the first
     trial reel and the story that haven't posted yet (failed or cancelled ones included) are armed
-    in order and the worker is kicked. Extra reels on the same day wait for the next press."""
-    if s.get(Device, device_id) is None:
+    in order and the worker is kicked. Extra reels on the same day wait for the next press.
+    A paused phone is resumed."""
+    d = s.get(Device, device_id)
+    if d is None:
         raise HTTPException(404, "device not found")
     from datetime import datetime
     from ..license import allowed as _lic_allowed
@@ -190,11 +192,15 @@ def run_day(device_id: str, run_date: date, s: Session = Depends(get_session)):
     ok, why = _lic_allowed()
     if not ok:
         raise HTTPException(409, why)
+    # a paused phone never runs its queue, so the press would do nothing: resume it, as
+    # "Start today" does. Anything armed earlier and still waiting goes out too.
+    resumed = bool(d.paused)
+    d.paused = False
     started, skipped = arm_round(s, device_id, run_date, datetime.now(), "Run day")
     s.commit()
-    if started:
+    if started or resumed:
         runner.kick(device_id)
-    return {"started": started, "skipped": skipped, "remaining": remaining_after(s, device_id, run_date)}
+    return {"started": started, "skipped": skipped, "remaining": remaining_after(s, device_id, run_date), "resumed": resumed}
 
 
 @router.post("/{device_id}/stop")

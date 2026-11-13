@@ -33,10 +33,14 @@ export default function PlannerPage() {
     if (!(await ask(`Start ${device.name}'s next round for ${day} now?\n${count} action(s) will run in order, real posts. The phone is woken first.${extra}`, "Run the day"))) return;
     try {
       const r = await api.runDay(device.id, day);
+      const skipped = r.skipped || [];
+      const waiting = skipped.filter((x) => x.endsWith("is already waiting its turn")).length;
       const bits = [`Started ${r.started} action(s) on ${device.name}`];
+      if (r.resumed) bits.push(waiting ? `phone was paused, now resumed: ${waiting} already in line go out` : "phone was paused, now resumed");
       if (r.remaining) bits.push(`${r.remaining} more wait for the next Run day`);
-      if (r.skipped?.length) bits.push(r.skipped.length <= 2 ? r.skipped.join("; ") : `${r.skipped.length} skipped`);
-      toast(bits.join(" · "), r.started ? "ok" : "err");
+      // always say why: the first reason in full, the rest as a count
+      if (skipped.length) bits.push(skipped.length <= 2 ? skipped.join("; ") : `${skipped[0]}, and ${skipped.length - 1} more skipped`);
+      toast(bits.join(" · "), r.started || (r.resumed && waiting) ? "ok" : "err");
       reload();
     } catch (e: any) { toast(e.message, "err"); }
   };

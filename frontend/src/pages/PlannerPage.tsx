@@ -5,7 +5,7 @@ import type { DayStart } from "../lib/api";
 import { Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
 import { inAlbum } from "../components/MediaPicker";
 import PlanDrawer from "../components/PlanDrawer";
-import AccountFill from "../components/AccountFill";
+import AccountFill, { type RollAnchor } from "../components/AccountFill";
 
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -23,7 +23,7 @@ export default function PlannerPage() {
   const setStart = async (deviceId: string, day: string, value: string) => { await scheduleApi.put(deviceId, day, value); reloadStarts(); };
   const [sel, setSel] = useState<{ account: Account; device: Device; date: string } | null>(null);
   // click an account's handle: fill its coming days in one go (clips in order, captions inline)
-  const [fill, setFill] = useState<{ account: Account; device: Device } | null>(null);
+  const [fill, setFill] = useState<{ account: Account; device: Device; at?: RollAnchor } | null>(null);
   const flat = useMemo(() => (devices || []).flatMap((d) => d.accounts.filter((a) => a.status === "active").map((a) => ({ account: a, device: d }))), [devices]);
   const nextOf = (a: Account) => { const i = flat.findIndex((x) => x.account.id === a.id); return i >= 0 && i + 1 < flat.length ? flat[i + 1] : null; };
   const toast = useToast();
@@ -101,7 +101,8 @@ export default function PlannerPage() {
           device={fill.device}
           weekStart={weekStart}
           next={nextOf(fill.account)}
-          onSwitch={(account, device) => setFill({ account, device })}
+          startAt={fill.at}
+          onSwitch={(account, device, at) => setFill({ account, device, at })}
           onClose={() => setFill(null)}
           onSaved={reload}
         />

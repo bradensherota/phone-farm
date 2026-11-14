@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, addDays, api, fmtDuration, parseYmd, thumbUrl, ymd } from "../lib/api";
 import { PlatformIcon, useConfirm, usePoll, useToast } from "./common";
@@ -8,12 +8,16 @@ import { HoverSoundToggle, HoverThumb, hoverSoundOn, inAlbum } from "./MediaPick
 // type the caption under each, and every pick lands on the next day that has nothing of its
 // kind planned for this account. Save once; the day cells stay for edits.
 
+/** Where the roll was scrolled: the first clip in view and how far below the top edge it sat. */
+export interface RollAnchor { mediaId: number; offset: number; scrollTop: number }
+
 interface Props {
   account: Account;
   device: Device;
   weekStart: Date;
   next: { account: Account; device: Device } | null;
-  onSwitch: (account: Account, device: Device) => void;
+  onSwitch: (account: Account, device: Device, at?: RollAnchor) => void;
+  startAt?: RollAnchor; // came here with "Save & next" from an account on the same phone: open the roll where it was
   onClose: () => void;
   onSaved: () => void;
 }
@@ -25,7 +29,7 @@ const slotOf = (action: ActionKey): Slot => (action === "ig_trial" ? "trial" : a
 const LETTER: Record<Slot, string> = { reel: "R", trial: "T", story: "S" };
 const dayLabel = (d: string) => parseYmd(d).toLocaleDateString([], { weekday: "short", day: "numeric" });
 
-export default function AccountFill({ account, device, weekStart, next, onSwitch, onClose, onSaved }: Props) {
+export default function AccountFill({ account, device, weekStart, next, startAt, onSwitch, onClose, onSaved }: Props) {
   const toast = useToast();
   const ask = useConfirm();
   const { data: settings } = usePoll(api.settings, 60000);
@@ -94,6 +98,31 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
     const asc = albumSorts[activeAlbum.trim()]?.ascending ?? true;
     return [...list].sort((a, b) => { const d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); return asc ? d : -d; });
   }, [items, videosOnly, activeAlbum, albumSorts]);
+  // "Save & next" to another account on this phone keeps the roll where it was (same roll, so the
+  // next clips to plan are usually right there). Anchored on a clip, not pixels: caption boxes
+  // under picked tiles change the row heights between the two accounts.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const restored = useRef(false);
+  const rollAnchor = (): RollAnchor | undefined => {
+    const body = bodyRef.current;
+    if (!body || body.scrollTop <= 0) return undefined;
+    const top = body.getBoundingClientRect().top;
+    for (const el of Array.from(body.querySelectorAll<HTMLElement>(".roll-item[data-mid]"))) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > top) return { mediaId: Number(el.dataset.mid), offset: r.top - top, scrollTop: body.scrollTop };
+    }
+    return { mediaId: 0, offset: 0, scrollTop: body.scrollTop };
+  };
+  const goNext = () => { if (next) onSwitch(next.account, next.device, next.device.id === device.id ? rollAnchor() : undefined); };
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (restored.current || !startAt || !shown.length || !body) return;
+    restored.current = true;
+    const el = body.querySelector<HTMLElement>(`.roll-item[data-mid="${startAt.mediaId}"]`);
+    if (el) body.scrollTop += el.getBoundingClientRect().top - body.getBoundingClientRect().top - startAt.offset;
+    else body.scrollTop = startAt.scrollTop;
+  }, [shown.length]);
+
   const orderNote = activeAlbum ? ((albumSorts[activeAlbum.trim()]?.ascending ?? true) ? "oldest first, as on the phone" : "newest first, as on the phone") : "";
 
   // where each pick lands: per kind, the next day from `fillFrom` that still has room for that
@@ -196,7 +225,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
   const needLink = storyPicks > 0 && !storyLink;
 
   const save = async (andNext: boolean) => {
-    if (!picks.length) { if (andNext && next) onSwitch(next.account, next.device); else onClose(); return; }
+    if (!picks.length) { if (andNext && next) goNext(); else onClose(); return; }
     if (needLink) { toast("Stories need a link; add one above the grid", "err"); return; }
     const body: JobIn[] = picks.map((p) => {
       const story = slotOf(p.action) === "story";
@@ -213,7 +242,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
       toast(`Saved ${picks.length} action${picks.length === 1 ? "" : "s"} for @${account.handle}`);
       setPicks([]);
       onSaved();
-      if (andNext && next) onSwitch(next.account, next.device);
+      if (andNext && next) goNext();
       else { await loadExisting(); api.media(device.id).then(setItems).catch(() => {}); }
     } catch (e: any) { toast(e.message, "err"); }
     finally { setSaving(false); }
@@ -299,7 +328,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
           ))}
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" ref={bodyRef}>
           {shown.length === 0 && <div className="empty">Nothing from "{activeAlbum || queueAlbum}" is in the app's copy of the roll yet. Add items to the album on the phone, then press Sync.</div>}
           <div className="roll">
             {shown.map((m) => {
@@ -308,7 +337,7 @@ export default function AccountFill({ account, device, weekStart, next, onSwitch
               const ex = !pick ? existingByMedia.get(m.id) : undefined;
               const cls = pick ? `fill-${slotOf(pick.action)}` : ex ? "fill-existing" : "";
               return (
-                <div key={m.id} className={`roll-item ${cls} ${m.posted_at ? "posted" : ""}`} onClick={() => toggle(m)}
+                <div key={m.id} data-mid={m.id} className={`roll-item ${cls} ${m.posted_at ? "posted" : ""}`} onClick={() => toggle(m)}
                      onMouseEnter={() => setHoverId(m.id)} onMouseLeave={() => setHoverId((h) => (h === m.id ? null : h))}
                      title={`${m.filename}${m.posted_on ? `\nPosted on ${m.posted_on}` : ""}${m.scheduled_on ? `\nPlanned: ${m.scheduled_on}` : ""}`}>
                   <div className="th">

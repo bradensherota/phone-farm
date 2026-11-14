@@ -13,6 +13,7 @@ export interface Account {
   sort_order: number;
   reels_per_day: number; // the fill screen plans this many reels a day; "Run day" posts one per press
   trials_per_day: number;
+  stories_added?: number; // answer to a status change back to active: every-account stories it took over
 }
 
 export interface Media {

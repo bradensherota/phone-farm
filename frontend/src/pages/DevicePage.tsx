@@ -216,7 +216,11 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
     } catch (e: any) { toast(e.message, "err"); }
   };
   const patch = async (id: number, body: Partial<Account>) => {
-    try { await api.patchAccount(id, body); onChanged(); } catch (e: any) { toast(e.message, "err"); }
+    try {
+      const r = await api.patchAccount(id, body);
+      if (r.stories_added) toast(`@${r.handle} is active again: ${r.stories_added} upcoming ${r.stories_added === 1 ? "story" : "stories"} added`);
+      onChanged();
+    } catch (e: any) { toast(e.message, "err"); }
   };
   const remove = async (a: Account) => {
     if (!(await ask(`Remove @${a.handle} and all of its planned posts?`, "Remove"))) return;

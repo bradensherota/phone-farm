@@ -21,6 +21,7 @@ class AccountOut(ORM):
     sort_order: int
     reels_per_day: int = 1
     trials_per_day: int = 1
+    stories_added: int = 0  # set on the answer to a status change back to active
 
 
 class AccountIn(BaseModel):

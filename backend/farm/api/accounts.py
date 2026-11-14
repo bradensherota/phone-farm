@@ -51,8 +51,15 @@ def patch_account(account_id: int, body: AccountPatch, s: Session = Depends(get_
         if k in data:
             data[k] = max(1, min(5, int(data[k] or 1)))
     old_link = a.story_link
+    was_active = a.status == AccountStatus.active
     for k, v in data.items():
         setattr(a, k, v)
+    stories_added = 0
+    if not was_active and a.status == AccountStatus.active:
+        # back from paused or banned: the every-account stories planned meanwhile skipped it
+        from datetime import date
+        from ..groups import carry_group_stories
+        stories_added = carry_group_stories(s, a, date.today())
     if "story_link" in data and (data["story_link"] or "") != (old_link or ""):
         # the link follows the account: stories planned but not yet posted take the new one
         from ..models import Job, JobStatus
@@ -63,6 +70,7 @@ def patch_account(account_id: int, body: AccountPatch, s: Session = Depends(get_
                 j.link = data["story_link"] or ""
     s.commit()
     s.refresh(a)
+    a.stories_added = stories_added
     return a
 
 

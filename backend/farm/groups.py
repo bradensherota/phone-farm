@@ -73,3 +73,62 @@ def resolve_pending(s: Session, device_id: str) -> int:
             job.media_id = twin.id
             n += 1
     return n
+
+
+def carry_group_stories(s: Session, account, today) -> int:
+    """An account that is active again takes its copy of every every-account story planned from
+    `today` on that hasn't posted yet (it was left out while it was paused or banned). Same rules
+    as planning one: an every-phone story reaches Instagram accounts on any phone, an
+    every-account one only the origin's own phone; a day the account already has a story on is
+    left alone (one story a day). Returns how many stories were added."""
+    from .models import ACTIONS, Account, Platform
+
+    action = next((a for a, m in ACTIONS.items() if m["platform"] == account.platform and m["label"] == "Story"), None)
+    if action is None:
+        return 0
+    from . import settings as settings_mod
+    from .models import Action
+    if action == Action.tt_story and not settings_mod.as_bool(settings_mod.get("tiktok_stories", "false")):
+        return 0  # switched off in Settings: the scheduler would cancel them straight away
+    origins = (
+        s.query(Job)
+        .filter(Job.group_key.like("allstories:%"), Job.run_date >= today, Job.account_id != account.id,
+                Job.status.in_([JobStatus.scheduled, JobStatus.failed]))
+        .order_by(Job.run_date, Job.id)
+        .all()
+    )
+    added = 0
+    for o in origins:
+        if o.group_key != f"allstories:{o.account_id}:{o.run_date.isoformat()}":
+            continue  # a copy, not the story the group was planned from
+        same_phone = o.device_id == account.device_id
+        if not same_phone and not (o.group_scope == "all" and account.platform == Platform.instagram):
+            continue
+        mine = s.query(Job).filter(Job.account_id == account.id, Job.run_date == o.run_date, Job.action == action).all()
+        if any(j.status != JobStatus.cancelled for j in mine):
+            continue
+        twin = next((j for j in mine if j.group_key == o.group_key), None)  # its old cancelled copy, if any
+        found = None
+        if not same_phone and o.media_id is not None:
+            media = s.get(MediaItem, o.media_id)
+            found = find_twin_media(s, account.device_id, media) if media is not None else None
+        new = twin is None
+        if new:
+            twin = Job(account_id=account.id, device_id=account.device_id, action=action)
+        if same_phone:
+            twin.media_id, twin.origin_media_id = o.media_id, None
+        else:
+            twin.origin_media_id = o.media_id
+            twin.media_id = found.id if found is not None else None
+        twin.group_key, twin.group_scope = o.group_key, o.group_scope
+        twin.caption = o.caption
+        twin.link = account.story_link or o.link
+        twin.link_text = o.link_text
+        twin.run_date, twin.run_at = o.run_date, None
+        twin.sort_order = account.sort_order * 10 + ACTIONS[action]["rank"]
+        twin.status, twin.attempts, twin.last_error = JobStatus.scheduled, 0, ""
+        if new:
+            s.add(twin)  # only once it is complete: a query in this loop may flush the session
+        added += 1
+    return added
+

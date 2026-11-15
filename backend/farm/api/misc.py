@@ -124,7 +124,10 @@ def license_checkin_now():
     with session_scope() as s:
         phones = s.query(Device).filter(Device.kind != "sim").count()
     ans = license_mod.checkin(phones, _app_version())
-    return license_mod.status() if ans is not None else {**license_mod.status(), "error": "Could not reach the license service"}
+    if ans is not None:
+        return license_mod.status()
+    why = license_mod.last_error() or "couldn't reach the license service"
+    return {**license_mod.status(), "error": why[0].upper() + why[1:]}
 
 
 @router.get("/update/check")

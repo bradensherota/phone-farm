@@ -3,12 +3,32 @@
 // once; after that Braden puts it on a paid plan with an end date (renewed month by month),
 // activates it for good, or switches it off and on at will.
 // Admin routes need the ADMIN_TOKEN secret, which lives only on Braden's Mac.
+// Every check-in answer is signed (Ed25519, SIGNING_KEY secret): the app trusts only the signed
+// `payload`, so an edited saved answer or a stand-in service is refused. The app holds the
+// public half; the private half lives here and in ~/.phonefarm-signing-key on Braden's Mac.
 
 const TRIAL_DAYS = 3;
 const DEFAULT_PHONES = 3;
 const DAY = 86400000;
 
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+
+let signingKey;
+async function signed(env, lic) {
+  // `payload` is the exact text that was signed; `sig` is the signature over its bytes
+  if (!env.SIGNING_KEY) return {};
+  try {
+    if (!signingKey) {
+      const der = Uint8Array.from(atob(env.SIGNING_KEY), (c) => c.charCodeAt(0));
+      signingKey = await crypto.subtle.importKey("pkcs8", der, { name: "Ed25519" }, false, ["sign"]);
+    }
+    const payload = JSON.stringify(lic);
+    const sig = await crypto.subtle.sign("Ed25519", signingKey, new TextEncoder().encode(payload));
+    return { payload, sig: btoa(String.fromCharCode(...new Uint8Array(sig))) };
+  } catch (e) {
+    return { sign_error: String(e) };
+  }
+}
 
 function effective(r, now) {
   let state = r.state;
@@ -60,7 +80,9 @@ export default {
       r.version = String(b.version || "").slice(0, 40);
       await env.LICENSES.put(key, JSON.stringify(r));
       const e = effective(r, now);
-      return json({ state: e.state, active: e.active, max_phones: r.max_phones, trial_until: r.trial_until, plan_until: r.plan_until || null, message: e.message, now });
+      const lic = { state: e.state, active: e.active, max_phones: r.max_phones, trial_until: r.trial_until, plan_until: r.plan_until || null, message: e.message, now };
+      // the plain fields stay for older copies of the app; newer ones read only the signed payload
+      return json({ ...lic, ...(await signed(env, { v: 1, mac_id: id, ...lic })) });
     }
 
     if (!url.pathname.startsWith("/v1/admin/")) return json({ error: "not found" }, 404);

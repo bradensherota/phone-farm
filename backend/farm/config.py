@@ -11,6 +11,9 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 HOST = "127.0.0.1"
 PORT = 8765
 LICENSE_URL = "https://phone-farm-license.bradensherota.workers.dev"  # Braden's license service (see license.py)
+# The service signs every answer; these are the public halves (a list, so a key can be replaced
+# without locking anyone out: add the new one here first, switch the service later).
+LICENSE_PUBKEYS = ["wekySshWFqrJ53RmvdGCp6svB7h+sfMglAR1Qdz1mLA="]
 
 # WebDriverAgent must live OUTSIDE iCloud-synced folders (Desktop/Documents), or code signing fails.
 PHONEFARM_HOME = Path.home() / "PhoneFarm"

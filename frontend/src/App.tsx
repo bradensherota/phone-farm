@@ -47,10 +47,11 @@ function PausedOverlay() {
   const [note, setNote] = useState("");
   const lic = runner?.license;
   if (!lic || lic.active) return null;
-  const title = lic.state === "expired" ? "Trial Over" : lic.state === "plan_ended" ? "Plan Ended" : "Service Paused";
+  const title = lic.state === "expired" ? "Trial Over" : lic.state === "plan_ended" ? "Plan Ended"
+    : lic.state === "unregistered" ? "Registering This Mac" : lic.state === "stale" ? "Connection Needed" : "Service Paused";
   const check = async () => {
     setChecking(true); setNote("");
-    try { const r = await api.licenseCheckin(); setNote(r.error ? r.error : r.active ? "Active again. One moment…" : "Still paused."); reload(); }
+    try { const r = await api.licenseCheckin(); setNote(r.active ? "Active again. One moment…" : r.error ? r.error : "Still paused."); reload(); }
     catch (e: any) { setNote(e.message); }
     finally { setChecking(false); }
   };

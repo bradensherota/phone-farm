@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import ssl
 import subprocess
 import threading
 import time
@@ -70,13 +72,34 @@ def max_phones() -> int:
         return DEFAULT_PHONES
 
 
+def _tls() -> ssl.SSLContext:
+    """Certificates for the check-in. Not every Python finds a certificate list by itself (one
+    installed from python.org has none until a separate setup step is run, and then every
+    check-in fails with CERTIFICATE_VERIFY_FAILED), so the list that ships with macOS is loaded
+    as well, and certifi's when it is installed."""
+    ctx = ssl.create_default_context()
+    for cafile in ("/etc/ssl/cert.pem", "/private/etc/ssl/cert.pem"):
+        if os.path.exists(cafile):
+            try:
+                ctx.load_verify_locations(cafile)
+                break
+            except Exception:
+                pass
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        pass
+    return ctx
+
+
 def checkin(phones: int, version: str) -> dict | None:
     body = {"mac_id": mac_id(), "mac_name": mac_name(), "user_name": (settings_mod.get("your_name", "") or "").strip(),
             "phones": phones, "version": version}
     req = urllib.request.Request(LICENSE_URL + "/v1/checkin", data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json", "User-Agent": f"PhoneFarm/{version or 'dev'}"})  # Cloudflare blocks the default Python agent
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(req, timeout=20, context=_tls()) as r:
             ans = json.loads(r.read() or b"{}")
     except Exception as e:
         log.warning("license check-in failed (keeping the last answer): %s", e)

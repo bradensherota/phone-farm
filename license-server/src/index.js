@@ -10,6 +10,7 @@
 const TRIAL_DAYS = 3;
 const DEFAULT_PHONES = 3;
 const DAY = 86400000;
+const SEEN_EVERY = 3600000; // "last seen" is saved at most once an hour (KV's free plan allows 1,000 writes a day)
 
 const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
 
@@ -96,15 +97,21 @@ export default {
       let r = await env.LICENSES.get(key, "json");
       const isNew = !r;
       if (!r) r = { mac_id: id, first_seen: now, state: "trial", trial_until: now + TRIAL_DAYS * DAY, max_phones: DEFAULT_PHONES, name: "", mac_name: "" };
-      const was = { name: r.name || "", mac_name: r.mac_name || "", phones: r.phones, version: r.version, eff: r.eff };
-      r.last_seen = now;
+      const was = { name: r.name || "", mac_name: r.mac_name || "", phones: r.phones, version: r.version, eff: r.eff, seen: r.last_seen || 0 };
       if (b.user_name) r.name = String(b.user_name).slice(0, 60);
       if (b.mac_name) r.mac_name = String(b.mac_name).slice(0, 60);
       r.phones = Number(b.phones) || 0;
       r.version = String(b.version || "").slice(0, 40);
       const e = effective(r, now);
       r.eff = e.state; // remembered, so the moment a trial or plan runs out is logged once
-      await env.LICENSES.put(key, JSON.stringify(r));
+      // Every check-in is answered from what is stored, but stored again only when something
+      // about the Mac changed or its "last seen" is over an hour old: a Mac asks every 15
+      // minutes, and saving each time would use up the day's writes at about ten Macs.
+      const changed = isNew || was.name !== r.name || was.mac_name !== r.mac_name || was.phones !== r.phones || was.version !== r.version || was.eff !== e.state;
+      if (changed || now - was.seen >= SEEN_EVERY) {
+        r.last_seen = now;
+        await env.LICENSES.put(key, JSON.stringify(r));
+      }
       const logs = [];
       if (isNew) logs.push(logEvent(env, now, r, "registered", { name: r.name, mac_name: r.mac_name, version: r.version, phones: r.phones, state: e.state, trial_until: r.trial_until }));
       else {

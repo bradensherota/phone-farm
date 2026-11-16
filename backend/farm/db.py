@@ -56,6 +56,7 @@ _ADDED_COLUMNS = [
     ("media", "hover_path", "VARCHAR NOT NULL DEFAULT ''"),
     ("accounts", "reels_per_day", "INTEGER NOT NULL DEFAULT 1"),
     ("accounts", "trials_per_day", "INTEGER NOT NULL DEFAULT 1"),
+    ("jobs", "dry_run_at", "DATETIME"),
 ]
 
 

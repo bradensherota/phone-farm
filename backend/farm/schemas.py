@@ -154,6 +154,7 @@ class JobOut(ORM):
     locked: str = ""  # why this job can't run yet (blocks rule), "" when it can
     started_at: datetime | None
     finished_at: datetime | None
+    dry_run_at: datetime | None = None  # a dry run passed then; the job is still planned
     next_run: datetime | None = None
     handle: str = ""
     platform: str = ""

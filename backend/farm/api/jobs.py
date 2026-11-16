@@ -131,6 +131,8 @@ def upsert_jobs(body: list[JobIn], s: Session = Depends(get_session)):
                 raise HTTPException(409, f"@{account.handle} already has a story on {item.run_date.strftime('%a %-d %b')}; one story a day. Change that one instead.")
 
         if not origin_posted:
+            if job.media_id != (media.id if media else None):
+                job.dry_run_at = None  # another clip: the dry run that passed wasn't of this one
             job.account_id = account.id
             job.device_id = account.device_id
             job.media_id = media.id if media else None

@@ -69,6 +69,9 @@ def due_jobs(s: Session, device: Device, now: datetime) -> list[Job]:
         # line. Extra reels planned on the same day wait for "Run day" or a time of their own
         firsts = first_in_line(s, device.id, today)
         rows = [j for j in rows if j.run_at is not None or j.id in firsts]
+    # a job that passed a dry run today waits for "Run day" / "Run now"; the routine start
+    # doesn't fire it again (it would loop: dry runs leave the job planned)
+    rows = [j for j in rows if j.run_at is not None or not _dry_today(j, today)]
     return [j for j in rows if not lock_reason(s, j)]  # a locked job never runs on its own
 
 
@@ -217,11 +220,12 @@ class Runner:
 
         def go():
             done = False
+            began = datetime.now()
             try:
                 self._execute(device_id, job_id)
                 with session_scope() as s:
                     j = s.get(Job, job_id)
-                    done = j is not None and j.status == JobStatus.done
+                    done = j is not None and (j.status == JobStatus.done or (j.dry_run_at is not None and j.dry_run_at >= began))
             except Exception:
                 log.exception("manual run failed")
             finally:
@@ -263,7 +267,7 @@ class Runner:
                         firsts = first_in_line(s, device_id, date.today()) if auto else set()
                         pending = sum(1 for j in s.query(Job).filter(Job.device_id == device_id, Job.run_date == date.today(),
                                                                      Job.status == JobStatus.scheduled).all()
-                                      if j.run_at is not None or j.id in firsts)
+                                      if j.run_at is not None or (j.id in firsts and not _dry_today(j, date.today())))
                         drained = not first and pending == 0
                         return
                     job_id = jobs[0].id
@@ -453,7 +457,7 @@ class Runner:
                 return
         self._finish(job_id, ok=result.ok, message=result.message, shot=result.screenshot_png, attempt=attempt,
                      stage=stage_now["name"], partial=result.partial, manual=bool(manual) or not getattr(result, "retry", True))
-        if result.ok and not result.partial and auto_album:
+        if result.ok and not result.partial and auto_album and not _is_dry_run(result.message):
             self._release_after_post(device_id, job_id)
 
     def _ensure_copy_present(self, device_id: str, job_id: int) -> bool:
@@ -625,6 +629,17 @@ class Runner:
                 job.status = JobStatus.scheduled
                 job.attempts = max(0, job.attempts - 1)
                 s.add(JobLog(job_id=job_id, level="ok", message=message))
+            elif ok and _is_dry_run(message):
+                # a dry run stops before the final Post / Share, so nothing went out: the job is
+                # not "done" and its clip is not "posted". It stays planned, ready to run again
+                # (another test, or for real), and starts from the beginning when it does.
+                job.status = JobStatus.scheduled
+                job.run_at = None
+                job.attempts = 0
+                job.last_error = ""
+                job.last_stage, job.failed_stage = "", ""
+                job.dry_run_at = datetime.now()
+                s.add(JobLog(job_id=job_id, level="ok", message=f"{message}. Nothing was posted; the job stays planned."))
             elif ok:
                 job.status = JobStatus.done
                 job.last_stage, job.failed_stage = "", ""
@@ -649,6 +664,15 @@ class Runner:
 
 _DROP_SIGNS = ("Remote end closed connection", "Connection refused", "Connection reset", "urlopen error",
                "WDAEmptyResponseError", "Errno 61", "Errno 54", "RemoteDisconnected")
+
+
+def _is_dry_run(message: str) -> bool:
+    """A flow that stopped at the final button because dry run is on (every flow says so)."""
+    return (message or "").startswith("Dry run")
+
+
+def _dry_today(job: Job, today: date) -> bool:
+    return job.dry_run_at is not None and job.dry_run_at.date() == today
 
 
 def _is_runner_drop(message: str) -> bool:

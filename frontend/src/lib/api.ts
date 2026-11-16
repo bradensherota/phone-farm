@@ -96,6 +96,7 @@ export interface Job {
   locked: string;
   started_at: string | null;
   finished_at: string | null;
+  dry_run_at?: string | null; // a dry run of it passed then; it is still planned, nothing was posted
   next_run: string | null;
   handle: string;
   platform: Platform;

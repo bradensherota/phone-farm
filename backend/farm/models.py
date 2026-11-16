@@ -165,6 +165,8 @@ class Job(Base):
     run_mode: Mapped[str] = mapped_column(String, default="")  # manual request: only | from | restart
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # last time a dry run of this job reached the final button; the job stays planned (nothing went out)
+    dry_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

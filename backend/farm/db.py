@@ -42,6 +42,7 @@ _ADDED_COLUMNS = [
     ("media", "albums", "VARCHAR NOT NULL DEFAULT ''"),
     ("devices", "story_album", "VARCHAR NOT NULL DEFAULT 'Stories'"),
     ("devices", "queue_album", "VARCHAR NOT NULL DEFAULT 'Farm Queue'"),
+    ("devices", "x_album", "VARCHAR NOT NULL DEFAULT 'X Queue'"),
     ("devices", "prepare_lead_min", "INTEGER NOT NULL DEFAULT 60"),
     ("devices", "passcode", "VARCHAR NOT NULL DEFAULT ''"),
     ("jobs", "group_key", "VARCHAR NOT NULL DEFAULT ''"),

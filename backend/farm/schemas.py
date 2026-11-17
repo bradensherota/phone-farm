@@ -87,6 +87,7 @@ class DeviceOut(ORM):
     sort_order: int
     story_album: str = "Stories"
     queue_album: str = "Farm Queue"
+    x_album: str = "X Queue"
     prepare_lead_min: int = 60
     has_passcode: bool = False
     album_sorts: dict = {}
@@ -121,6 +122,7 @@ class DevicePatch(BaseModel):
     sort_order: int | None = None
     story_album: str | None = None
     queue_album: str | None = None
+    x_album: str | None = None
     prepare_lead_min: int | None = None
     passcode: str | None = None
 

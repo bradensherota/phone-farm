@@ -32,7 +32,7 @@ def _today_summary(s: Session, device_id: str) -> TodaySummary:
 
 def device_out(s: Session, d: Device) -> DeviceOut:
     info = manager.status(d.id)
-    albums = [a for a in ((d.queue_album or "").strip(), (d.story_album or "").strip()) if a]
+    albums = d.work_albums()
     media_q = s.query(func.count(MediaItem.id)).filter(MediaItem.device_id == d.id, MediaItem.present.is_(True))
     if albums:
         from sqlalchemy import or_
@@ -365,7 +365,7 @@ def sync_device(device_id: str, albums_only: bool = False, s: Session = Depends(
 @router.get("/{device_id}/media", response_model=list[MediaOut])
 def list_media(device_id: str, s: Session = Depends(get_session)):
     dev = s.get(Device, device_id)
-    albums = [a for a in ((dev.queue_album or "").strip(), (dev.story_album or "").strip()) if a] if dev is not None else []
+    albums = dev.work_albums() if dev is not None else []
     from sqlalchemy import or_
     rows = (
         s.query(MediaItem)

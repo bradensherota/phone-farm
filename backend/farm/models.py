@@ -79,6 +79,7 @@ class Device(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     story_album: Mapped[str] = mapped_column(String, default="Stories")  # Photos album the flows pick from when the item is in it
     queue_album: Mapped[str] = mapped_column(String, default="Farm Queue")  # album the app fills with scheduled items and empties after posting
+    x_album: Mapped[str] = mapped_column(String, default="X Queue")  # Photos album X posts are picked from (X has its own: what goes there differs from Instagram)
     prepare_lead_min: Mapped[int] = mapped_column(Integer, default=60)  # fill the queue album this many minutes before the routine
     passcode: Mapped[str] = mapped_column(String, default="")  # lock-screen passcode, typed by the runner to wake the phone (local DB only)
     album_sorts: Mapped[str] = mapped_column(Text, default="{}")  # JSON: album title -> {"by": "date"|"custom", "ascending": bool}, read from the phone at sync
@@ -88,6 +89,24 @@ class Device(Base):
         back_populates="device", cascade="all, delete-orphan", order_by="Account.sort_order"
     )
     media: Mapped[list[MediaItem]] = relationship(back_populates="device", cascade="all, delete-orphan")
+
+    def work_albums(self) -> list[str]:
+        """The Photos albums the app works with on this phone (queue, stories, X). Nothing else
+        on the roll is pulled or shown."""
+        out: list[str] = []
+        for n in (self.queue_album, self.story_album, self.x_album if self.x_album is not None else "X Queue"):
+            n = (n or "").strip()
+            if n and n not in out:
+                out.append(n)
+        return out
+
+    def albums_for(self, platform) -> list[str]:
+        """Album(s) a job on this platform takes its media from: X has its own album, the
+        others share the queue and story albums."""
+        if getattr(platform, "value", platform) == "x":
+            n = (self.x_album if self.x_album is not None else "X Queue").strip()
+            return [n] if n else []
+        return [n for n in ((self.queue_album or "").strip(), (self.story_album or "").strip()) if n]
 
 
 class Account(Base):
@@ -215,6 +234,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sim_failure_rate": "0.0",  # 0..1, inject failures to test retry/alerts
     "max_attempts": "2",
     "dry_run": "false",  # true = flows stop right before the final Post/Share button
+    "x_full_list": "false",  # X: true = always open the X album through the picker's full album list (slower; for a phone where the album's tile is unreliable)
+    "fast_taps": "true",  # X: after the first (learning) run on a phone, tap the remembered button spots instead of looking each one up
     "default_link_instagram": "",  # story link a new Instagram account gets when none is given (set yours in Settings)
     "default_link_tiktok": "",  # same for TikTok
     "auto_start": "false",  # true = a day's queue starts by itself at its start time; false = you press "Start today"

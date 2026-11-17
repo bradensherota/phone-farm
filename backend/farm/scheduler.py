@@ -389,9 +389,10 @@ class Runner:
             media: MediaItem | None = job.media
             device: Device = s.get(Device, device_id)
             album, album_index = None, None
+            wanted = device.albums_for(account.platform) if device is not None else []
             if media is not None and device is not None:
                 titles = [t for t in (media.albums or "").split("|") if t]
-                for cand in ((device.queue_album or "").strip(), (device.story_album or "").strip()):
+                for cand in wanted:
                     if cand and cand in titles:
                         album = cand
                         album_index = _album_index(s, device_id, album, media)
@@ -412,6 +413,7 @@ class Runner:
                     "filename": media.filename if media else None,
                     "roll_total": s.query(MediaItem).filter(MediaItem.device_id == device_id, MediaItem.present.is_(True)).count(),
                     "album": album,
+                    "album_wanted": wanted[0] if wanted else None,  # where the media should be, for the message when it isn't
                     "album_index": album_index,  # newest-first position (Instagram's album order)
                     "album_count": _album_count(s, device_id, album) if album else None,
                     "album_newest_s": _album_edge_durations(s, device_id, album)[0] if album else None,
@@ -419,6 +421,8 @@ class Runner:
                     # oldest-first grids (TikTok): places before the newest item, 0 = newest
                     "album_from_end": album_index,
                     "dry_run": settings_mod.as_bool(settings_mod.get("dry_run", "false")),
+                    "fast": settings_mod.as_bool(settings_mod.get("fast_taps", "true")),
+                    "x_full_list": settings_mod.as_bool(settings_mod.get("x_full_list", "false")),
                     "last_stage": job.last_stage or "",  # how far an earlier attempt of this job got
                     "stage_only": stage_only or None,
                     "stage_from": stage_from or None,
@@ -493,7 +497,7 @@ class Runner:
             dev = s.get(Device, device_id)
             if job is None or dev is None or job.media is None:
                 return
-            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""}
+            albums = set(dev.albums_for(job.account.platform if job.account is not None else None))
             def in_album(m) -> bool:
                 return any(t.strip() in albums for t in (m.albums or "").split("|") if t)
             if in_album(job.media):
@@ -513,7 +517,7 @@ class Runner:
             if job is None or dev is None or job.media is None or dev.kind == "sim":
                 return
             fname = job.media.filename.split("/")[-1]
-            album = (dev.queue_album or "").strip() or "the album"
+            album = next(iter(dev.albums_for(job.account.platform if job.account is not None else None)), "") or "the album"
         drv = self.manager.driver(device_id)
         if drv is None or not drv.is_connected():
             return

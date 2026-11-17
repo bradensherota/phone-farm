@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, ActionKey, ActionMeta, Device, Job, JobIn, Media } from "../lib/api";
 import { actionsFor, api, fmtDateTime, parseYmd, toLocalInput } from "../lib/api";
 import { MediaThumb, Pill, PlatformIcon, usePoll, useToast } from "./common";
-import MediaPicker, { inAlbum } from "./MediaPicker";
+import MediaPicker, { inJobAlbum, jobAlbum } from "./MediaPicker";
 import JobDetail from "./JobDetail";
 
 interface Props {
@@ -231,8 +231,8 @@ export default function PlanDrawer({ account, device, date, jobs, onClose, onSav
                         <div className="grow">
                           <div className="small">{d.media ? d.media.filename : <span className="dim">No media chosen</span>}</div>
                           {d.media && d.media.index !== null && <div className="small dim">#{d.media.index + 1} in Recents</div>}
-                          {d.media && !inAlbum(d.media, device.queue_album) && !inAlbum(d.media, device.story_album) && (
-                            <div className="small" style={{ color: "var(--amber)" }}>Not in {device.queue_album || "the album"} yet: add it in Photos before it runs, then Sync.</div>
+                          {d.media && !inJobAlbum(d.media, device, account.platform) && (
+                            <div className="small" style={{ color: "var(--amber)" }}>Not in {jobAlbum(device, account.platform) || "the album"} yet: add it in Photos before it runs, then Sync.</div>
                           )}
                         </div>
                         <button className="btn sm" disabled={locked} onClick={() => setPicker({ action: a.action, idx })}>{d.media ? "Change" : "Choose from roll"}</button>

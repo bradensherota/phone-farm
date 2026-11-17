@@ -48,10 +48,10 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
   const { data: settings } = usePoll(api.settings, 10000);
   const autoStart = settings?.auto_start === "true";
   const nav = useNavigate();
-  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min });
-  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.prepare_lead_min]);
+  const [form, setForm] = useState({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, x_album: device.x_album, prepare_lead_min: device.prepare_lead_min });
+  useEffect(() => setForm({ name: device.name, routine_start: device.routine_start, gap_min_s: device.gap_min_s, gap_max_s: device.gap_max_s, story_album: device.story_album, queue_album: device.queue_album, x_album: device.x_album, prepare_lead_min: device.prepare_lead_min }), [device.id, device.name, device.routine_start, device.gap_min_s, device.gap_max_s, device.story_album, device.queue_album, device.x_album, device.prepare_lead_min]);
   const [passcode, setPasscode] = useState("");
-  const dirty = passcode !== "" || form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s || form.story_album !== device.story_album || form.queue_album !== device.queue_album || form.prepare_lead_min !== device.prepare_lead_min;
+  const dirty = passcode !== "" || form.name !== device.name || form.routine_start !== device.routine_start || form.gap_min_s !== device.gap_min_s || form.gap_max_s !== device.gap_max_s || form.story_album !== device.story_album || form.queue_album !== device.queue_album || form.x_album !== device.x_album || form.prepare_lead_min !== device.prepare_lead_min;
   const save = async () => {
     try { await api.patchDevice(device.id, passcode ? ({ ...form, passcode } as Partial<Device> & { passcode: string }) : form); setPasscode(""); toast("Saved"); onChanged(); } catch (e: any) { toast(e.message, "err"); }
   };
@@ -116,6 +116,7 @@ function DeviceHeader({ device, onChanged }: { device: Device; onChanged: () => 
         )}
         <div className="field"><label>&nbsp;</label><button className="btn ghost danger" onClick={remove}>Remove</button></div>
         <div className="field"><label>Queue album</label><input className="input" style={{ width: 130 }} value={form.queue_album} placeholder="Farm Queue" onChange={(e) => setForm({ ...form, queue_album: e.target.value })} title="Photos album on this phone where you put the clips you plan. Reels, posts and stories are picked from here." /></div>
+        {device.accounts.some((a) => a.platform === "x") && <div className="field"><label>X album</label><input className="input" style={{ width: 130 }} value={form.x_album} placeholder="X Queue" onChange={(e) => setForm({ ...form, x_album: e.target.value })} title="Photos album on this phone where you put what you plan to post on X. X posts are picked from here, not from the queue album." /></div>}
         <div className="field"><label>Passcode {device.has_passcode ? <span className="dim">(set)</span> : <span className="dim">(none)</span>}</label><input className="input" type="password" style={{ width: 100 }} placeholder={device.has_passcode ? "••••••" : "none"} autoComplete="off" onChange={(e) => setPasscode(e.target.value)} value={passcode} title="Lock-screen passcode the runner types to wake this phone. Stored only in this Mac's local database." /></div>
         {autoStart && <div className="field"><label>Routine start</label><input className="input" type="time" style={{ width: 120 }} value={form.routine_start} onChange={(e) => setForm({ ...form, routine_start: e.target.value })} /></div>}
         <div className="field"><label>Gap between actions (s)</label>
@@ -232,7 +233,7 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
   return (
     <div className="card">
       <table className="table">
-        <thead><tr><th style={{ width: 40 }}></th><th>Handle</th><th>Status</th><th>Story link</th><th style={{ width: 80 }}></th></tr></thead>
+        <thead><tr><th style={{ width: 130 }} title="Which app the account is on. Pick it here when you add an account.">App</th><th>Handle</th><th>Status</th><th>Story link</th><th style={{ width: 80 }}></th></tr></thead>
         <tbody>
           {device.accounts.map((a) => {
             const e = edit[a.id] || {};
@@ -263,8 +264,8 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
           {adding && (
             <tr>
               <td>
-                <select className="select" value={draft.platform} onChange={(e) => setDraft({ ...draft, platform: e.target.value as Platform })}>
-                  <option value="instagram">IG</option><option value="tiktok">TT</option><option value="x">X</option>
+                <select className="select" style={{ width: 118, minWidth: 118 }} value={draft.platform} title="Which app this account is on" onChange={(e) => setDraft({ ...draft, platform: e.target.value as Platform })}>
+                  <option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="x">X</option>
                 </select>
               </td>
               <td><input className="input" autoFocus placeholder="handle" value={draft.handle} onChange={(e) => setDraft({ ...draft, handle: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} /></td>
@@ -278,6 +279,9 @@ function AccountsTab({ device, onChanged }: { device: Device; onChanged: () => v
       <div className="card-body">
         {!adding && <button className="btn sm" onClick={() => setAdding(true)}>+ Add account</button>}
         <span className="small dim" style={{ marginLeft: 12 }}>Accounts post in this order each morning. A banned or paused account is skipped in the planner.</span>
+        {((adding && draft.platform === "x") || device.accounts.some((a) => a.platform === "x")) && (
+          <div className="small dim" style={{ marginTop: 8 }}>X: the first post from an X account on this phone is slow, because the app is learning where X's buttons are. After that, posts are fast. X posts are picked from the "{device.x_album || "X Queue"}" album on the phone.</div>
+        )}
       </div>
     </div>
   );

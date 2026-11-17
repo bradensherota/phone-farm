@@ -3,7 +3,7 @@ import type { Account, Device, Job } from "../lib/api";
 import { actionMeta, addDays, api, fmtHHMM, scheduleApi, startOfWeek, thumbUrl, TIME_SLOTS, ymd } from "../lib/api";
 import type { DayStart } from "../lib/api";
 import { Pill, PlatformIcon, StatusDot, useConfirm, usePoll, useToast } from "../components/common";
-import { inAlbum } from "../components/MediaPicker";
+import { inJobAlbum, jobAlbum } from "../components/MediaPicker";
 import PlanDrawer from "../components/PlanDrawer";
 import AccountFill, { type RollAnchor } from "../components/AccountFill";
 
@@ -195,7 +195,7 @@ function DeviceRows({ device, days, today, byCell, onPick, onFill, startFor, set
               <td key={k}>
                 <div className={`cell ${k === today ? "today" : k < today ? "past" : ""}`} onClick={() => onPick(a, k)}>
                   {cellJobs.map((j) => (
-                    <div key={j.id} className={`chip ${j.status} ${j.dry_run_at && j.status === "scheduled" ? "dry" : ""} ${j.locked ? "locked" : ""} ${j.media ? (!inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? "noalbum" : "") : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.locked ? ` · ${j.locked}` : ""}${j.media && !inAlbum(j.media, device.queue_album) && !inAlbum(j.media, device.story_album) && j.status !== "done" ? ` · not in ${device.queue_album || "the album"} yet: add it in Photos before it runs` : ""}${j.last_error ? ` · ${j.last_error}` : ""}${j.dry_run_at && j.status === "scheduled" ? ` · dry run passed ${new Date(j.dry_run_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}, nothing posted` : ""}`}>
+                    <div key={j.id} className={`chip ${j.status} ${j.dry_run_at && j.status === "scheduled" ? "dry" : ""} ${j.locked ? "locked" : ""} ${j.media ? (!inJobAlbum(j.media, device, a.platform) && j.status !== "done" ? "noalbum" : "") : "missing"}`} title={`${actionMeta(j.action).label} · ${j.status}${j.locked ? ` · ${j.locked}` : ""}${j.media && !inJobAlbum(j.media, device, a.platform) && j.status !== "done" ? ` · not in ${jobAlbum(device, a.platform) || "the album"} yet: add it in Photos before it runs` : ""}${j.last_error ? ` · ${j.last_error}` : ""}${j.dry_run_at && j.status === "scheduled" ? ` · dry run passed ${new Date(j.dry_run_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}, nothing posted` : ""}`}>
                       {j.locked && <span className="lock" title={j.locked}>🔒</span>}
                       {j.dry_run_at && j.status === "scheduled" && <span className="dry-tag">dry ✓</span>}
                       {j.media && thumbUrl(j.media) ? <img className="th" src={thumbUrl(j.media)} alt="" /> : <span className="th" />}

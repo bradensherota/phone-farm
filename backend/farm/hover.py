@@ -85,7 +85,7 @@ def make_hover(src: Path, out: Path) -> bool:
 
 
 def _album_filter(dev: Device):
-    names = [n for n in ((dev.queue_album or "").strip(), (dev.story_album or "").strip()) if n]
+    names = dev.work_albums()
     return or_(*[MediaItem.albums.contains(n) for n in names]) if names else None
 
 
@@ -93,7 +93,7 @@ def wanted(row: MediaItem, dev: Device) -> bool:
     """Only album videos get a hover clip: the queue and story albums, never the whole roll."""
     if row.kind != "video":
         return False
-    names = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""}
+    names = set(dev.work_albums())
     return any(t.strip() in names for t in (row.albums or "").split("|") if t)
 
 

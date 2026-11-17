@@ -311,7 +311,7 @@ class DeviceManager:
             dev = s.get(Device, device_id)
             # only the queue/story albums get thumbnails, hover clips and probes: the rest of the
             # roll is just an index entry (25k items on the 17; pulling them all is far too heavy)
-            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""} if dev is not None else set()
+            albums = set(dev.work_albums()) if dev is not None else set()
             sorts = getattr(drv, "album_sorts", None)
             if isinstance(sorts, dict) and dev is not None:
                 import json as _json
@@ -356,7 +356,7 @@ class DeviceManager:
         from ..hover import hover_path_for, wanted as hover_wanted
         with session_scope() as s:
             dev_row = s.get(Device, device_id)
-            hover_albums = (dev_row.queue_album, dev_row.story_album) if dev_row is not None else ("", "")
+            hover_albums = (dev_row.queue_album, dev_row.story_album, dev_row.x_album) if dev_row is not None else ("", "", "")
         pulls = 0
         for row_id, filename, needs_thumb, needs_probe in todo:
             if pulls >= MAX_THUMBS_PER_SYNC:
@@ -369,7 +369,7 @@ class DeviceManager:
                 if drv.kind == "ios":
                     with session_scope() as s:
                         r = s.get(MediaItem, row_id)
-                        dev_stub = Device(id=device_id, name="", queue_album=hover_albums[0], story_album=hover_albums[1])
+                        dev_stub = Device(id=device_id, name="", queue_album=hover_albums[0], story_album=hover_albums[1], x_album=hover_albums[2])
                         if r is not None and not r.hover_path and hover_wanted(r, dev_stub):
                             hover_out = hover_path_for(device_id, filename)
                 if not out.exists():
@@ -423,7 +423,7 @@ class DeviceManager:
             dev = s.get(Device, device_id)
             if dev is None:
                 return 0
-            albums = {(dev.queue_album or "").strip(), (dev.story_album or "").strip()} - {""}
+            albums = set(dev.work_albums())
             used = {mid for (mid,) in s.query(Job.media_id).filter(Job.device_id == device_id, Job.media_id.isnot(None)).distinct()}
             rows = s.query(MediaItem).filter(MediaItem.device_id == device_id, (MediaItem.thumb_path != "") | (MediaItem.hover_path != "")).all()
             for r in rows:

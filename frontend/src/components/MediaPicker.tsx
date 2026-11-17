@@ -15,6 +15,12 @@ interface Props {
 export const inAlbum = (m: Media, album: string) =>
   !!album && (m.albums || "").split("|").map((t) => t.trim()).includes(album.trim());
 
+// the album a job on this platform takes its media from: X has its own, the rest share the queue (and story) album
+export const jobAlbum = (device: { queue_album: string; x_album?: string }, platform: string) =>
+  platform === "x" ? device.x_album || "X Queue" : device.queue_album;
+export const inJobAlbum = (m: Media, device: { queue_album: string; story_album: string; x_album?: string }, platform: string) =>
+  platform === "x" ? inAlbum(m, device.x_album || "X Queue") : inAlbum(m, device.queue_album) || inAlbum(m, device.story_album);
+
 // hover sound: on by default, remembered per browser
 export function hoverSoundOn(): boolean { try { return localStorage.getItem("hoverSound") !== "off"; } catch { return true; } }
 export function setHoverSound(on: boolean) { try { localStorage.setItem("hoverSound", on ? "on" : "off"); } catch {} }

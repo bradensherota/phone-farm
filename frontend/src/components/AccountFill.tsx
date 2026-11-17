@@ -66,7 +66,7 @@ export default function AccountFill({ account, device, weekStart, next, startAt,
     api.patchAccount(account.id, s === "reel" ? { reels_per_day: n } : { trials_per_day: n }).then(() => onSaved()).catch((e) => toast(e.message, "err"));
   };
 
-  const queueAlbum = device.queue_album || "";
+  const queueAlbum = account.platform === "x" ? device.x_album || "X Queue" : device.queue_album || "";  // X posts come from their own album
   const storyAlbum = ""; // the ★ story album is retired (2026-10-10): every clip, stories included, lives in the queue album
   const albumSorts = device.album_sorts || {};
   const activeAlbum = albumFilter === "queue" ? queueAlbum : albumFilter === "story" ? storyAlbum : "";
@@ -91,7 +91,7 @@ export default function AccountFill({ account, device, weekStart, next, startAt,
     else setAlbumFilter("queue");
   }, [curSlot, items.length, albumTouched, storyAlbum, queueAlbum]);
 
-  const videosOnly = curSlot !== "story";
+  const videosOnly = (modes.find((a) => a.action === mode)?.media ?? "video") === "video";  // stories and X posts take photos too
   const shown = useMemo(() => {
     const list = items.filter((m) => (videosOnly ? m.kind === "video" : true)).filter((m) => (activeAlbum ? inAlbum(m, activeAlbum) : true));
     if (!activeAlbum) return list;

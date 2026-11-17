@@ -13,11 +13,13 @@ which is exactly `ActionSpec.media_index`. Cells further down are reached by swi
 from __future__ import annotations
 
 import io
+import json
+import re
 import time
 
 import wda  # facebook-wda
 
-from .base import ActionResult, ActionSpec, LogFn
+from .base import ActionResult, ActionSpec, FlowAborted, LogFn
 
 BUNDLES = {
     "instagram": "com.burbn.instagram",
@@ -44,6 +46,7 @@ class Phone:
         self.log = log
         self.check = getattr(log, "check", lambda: None)  # raises FlowAborted after Stop was pressed
         self.s: wda.Session | None = None
+        self.device_id = ""  # set by run(); flows that remember things per phone key them on it
 
     # ---- app ---------------------------------------------------------------
     # Snapshotting a huge view tree (TikTok's feed) can freeze both the app and the runner
@@ -159,6 +162,44 @@ class Phone:
         self.log("info", f"Tap {what or q}")
         self.wait(timeout=timeout, what=what, **q).tap()
         time.sleep(pause)
+
+    def tap_at(self, x: float, y: float, pause: float = 0.0) -> None:
+        """Touch one point on the glass. No lookup: nothing is read from the app first.
+        The press is a fixed 60 ms, sent as one timed gesture: the plain tap call can hold the
+        finger down long enough under load to count as a long press (X's + then opens a menu)."""
+        self.check()
+        self.c.http.post(f"/session/{self.s.session_id}/actions", {"actions": [
+            {"type": "pointer", "id": "finger1", "parameters": {"pointerType": "touch"}, "actions": [
+                {"type": "pointerMove", "duration": 0, "x": int(round(x)), "y": int(round(y))},
+                {"type": "pointerDown", "button": 0}, {"type": "pause", "duration": 60}, {"type": "pointerUp", "button": 0}]}]})
+        if pause:
+            time.sleep(pause)
+
+    def nodes(self) -> list[dict]:
+        """Everything in the app right now (type, label, name, value, place) from ONE read, for
+        flows where asking about elements one at a time is too slow."""
+        self.check()
+        import xml.etree.ElementTree as ET
+        xml = self.s.source(format="xml")
+        root = ET.fromstring(xml.encode() if isinstance(xml, str) else xml)
+        out = []
+        for e in root.iter():
+            try:
+                x, y, w, h = (float(e.get(k) or 0) for k in ("x", "y", "width", "height"))
+            except ValueError:
+                continue
+            out.append({"type": (e.get("type") or "").replace("XCUIElementType", ""), "label": e.get("label") or "",
+                        "name": e.get("name") or "", "value": e.get("value") or "", "enabled": e.get("enabled") != "false",
+                        "visible": e.get("visible") == "true", "x": x, "y": y, "w": w, "h": h,
+                        "cx": x + w / 2, "cy": y + h / 2})
+        return out
+
+    def set_depth(self, depth: int) -> None:
+        """How deep reads go into the app's view tree for this session."""
+        try:
+            self.c.http.post(f"/session/{self.s.session_id}/appium/settings", {"settings": {"snapshotMaxDepth": depth}})
+        except Exception as e:
+            self.log("warn", f"Could not set the read depth: {e}")
 
     def tap_if(self, timeout: float = 3, what: str = "", pause: float = 1.2, **q) -> bool:
         e = self.el(**q).wait(timeout=timeout, raise_error=False)
@@ -1077,9 +1118,483 @@ def tt_story(p: Phone, spec: ActionSpec):
     return False, "TikTok story flow not written yet"
 
 
+# ---- X ----------------------------------------------------------------------------
+# Mapped on-device 2026-11-16 (17 Pro Max, iOS 26). Path: "Compose post" (the blue +) ->
+# "Photo library" in the composer's toolbar -> the system photo picker -> Collections -> the
+# album tile -> the cell -> Done (the tick) -> caption -> Post. Posted = the composer is gone.
+#
+# X keeps its whole feed in the view tree behind the composer and the picker, so every lookup
+# by name costs seconds. Its buttons sit in fixed places, so the first run on a phone finds
+# each one by name and remembers where it is (setting x_spots:<phone>); later runs touch those
+# spots directly and read the screen only where it matters: the album grid (which cell), the
+# composer before Post (right account, one item attached, caption in) and after Post (composer
+# gone). A fast run that goes wrong before Post is pressed forgets the spots and the job is
+# done again the detailed way, which learns them afresh.
+#
+# The picker's album tiles sit deeper in the tree than the usual read depth; its cells are
+# Images named PXGGridLayout-Info whose label carries kind and capture time
+# ("Photo, Favorite, October 22, 8:19 PM"). They report visible=false even on screen.
+# The picker is a sheet that starts below the top of the screen, and everything inside it
+# reports its place measured from the sheet's top, not the screen's: a touch by position has
+# to add that gap (x_sheet_dy), or it lands one row too high.
+# Read depth matters a great deal: X's own buttons sit within 16 levels and a read that deep
+# takes under 2 s, while the feed's posts lie deeper and make a full read take 10 s or more.
+# Only the picker needs a deep read (its buttons are ~25 deep, tiles ~42, cells ~35).
+
+X_COMPOSER = "type == 'XCUIElementTypeButton' AND label == 'Photo library' AND visible == 1"  # only the composer has it
+X_DEPTH = 16         # X's own screens: timeline, composer
+X_PICKER_DEPTH = 60  # the system photo picker
+X_CELL = "PXGGridLayout-Info"
+X_SPOTS = ("compose", "library", "collections", "album", "done", "text")
+_MONTHS = ("JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER")
+_X_WHEN = re.compile(r"\b(" + "|".join(_MONTHS) + r") (\d{1,2})(?:, (\d{4}))?, (\d{1,2}):(\d{2})(?: ?(AM|PM))?")
+
+
+class Spots:
+    """Where an app's fixed buttons are on one phone. Learned on a detailed run (each button
+    found by name, then touched at its centre, so the spot is proven to work) and replayed on
+    later runs without any lookup."""
+
+    def __init__(self, p: Phone, key: str, needed: tuple[str, ...]):
+        self.p, self.key, self.needed = p, key, needed
+        self.learned: dict[str, list[float]] = {}
+        self.dy = 0.0  # the picker sheet's gap from the top of the screen, when the flow has one
+        self.rec: dict = {}
+        if p.device_id:
+            from .. import settings as settings_mod
+            try:
+                self.rec = json.loads(settings_mod.get(key, "") or "{}")
+            except Exception:
+                self.rec = {}
+        self.points: dict = self.rec.get("points") or {}
+
+    def ready(self, tag: str) -> bool:
+        """Every spot known, learned for this album."""
+        return bool(self.p.device_id) and self.rec.get("tag") == tag and all(n in self.points for n in self.needed)
+
+    def same_screen(self) -> bool:
+        try:
+            w, h = self.p.s.window_size()
+            return [int(w), int(h)] == self.rec.get("size")
+        except Exception:
+            return False
+
+    def touch(self, name: str, what: str, pause: float = 1.2) -> None:
+        x, y = self.points[name]
+        self.p.log("info", f"Tap {what} (remembered spot)")
+        self.p.tap_at(x, y, pause)
+
+    def find_and_touch(self, name: str, what: str, pause: float = 1.2, timeout: float = 15, **q) -> None:
+        e = self.p.wait(timeout=timeout, what=what, **q)
+        b = e.bounds
+        x, y = b.x + b.width / 2, b.y + b.height / 2
+        self.learned[name] = [round(x, 1), round(y, 1)]
+        self.p.log("info", f"Tap {what}")
+        self.p.tap_at(x, y, pause)
+
+    def note_and_touch(self, name: str, x: float, y: float, what: str, pause: float = 1.2) -> None:
+        """Same as find_and_touch for a button whose place came from a read the flow already did."""
+        self.learned[name] = [round(x, 1), round(y, 1)]
+        self.p.log("info", f"Tap {what}")
+        self.p.tap_at(x, y, pause)
+
+    def save(self, tag: str) -> None:
+        if not self.p.device_id or not self.learned:
+            return
+        points = dict(self.points) if self.rec.get("tag") == tag else {}
+        points.update(self.learned)
+        try:
+            w, h = self.p.s.window_size()
+            size = [int(w), int(h)]
+        except Exception:
+            return
+        if self.rec.get("size") not in (None, size):
+            points = dict(self.learned)
+        from .. import settings as settings_mod
+        self.rec = {"tag": tag, "size": size, "points": points, "dy": self.dy or self.rec.get("dy") or 0}
+        self.points = points
+        settings_mod.set_many({self.key: json.dumps(self.rec)})
+        if all(n in points for n in self.needed):
+            self.p.log("info", "Button spots remembered for this phone: the next run taps them directly")
+
+    def forget(self) -> None:
+        self.rec, self.points = {}, {}
+        if self.p.device_id:
+            from .. import settings as settings_mod
+            settings_mod.set_many({self.key: ""})
+
+
+def _x_vis(ns: list[dict], type_: str, label: str | None = None, starts: str | None = None) -> dict | None:
+    for n in ns:
+        if n["type"] == type_ and n["visible"] and (label is None or n["label"] == label) and (starts is None or n["label"].startswith(starts)):
+            return n
+    return None
+
+
+def x_sheet_dy(ns: list[dict], screen_h: float) -> float:
+    """How far below the top of the screen the photo picker's sheet starts (0 when no picker
+    is up). The sheet reaches the bottom of the screen and its toolbar is its last element."""
+    for n in ns:
+        if n["type"] == "Toolbar" or (n["name"] == "photosView_content_scroll_view" and n["y"] == 0):
+            dy = screen_h - (n["y"] + n["h"])
+            if 0 < dy < 250:
+                return dy
+    return 0.0
+
+
+def x_picker_read(p: Phone, want: tuple[str, str], what: str, dy: float = 0.0, tries: int = 4) -> tuple[list[dict], dict, float]:
+    """Read the photo picker until it shows the (type, label) wanted. Returns the read, that
+    element, and the sheet's gap from the top of the screen (`dy` when this screen gives none)."""
+    h = p.window_height()
+    for i in range(tries):
+        ns = p.nodes()
+        n = next((n for n in ns if n["type"] == want[0] and n["label"] == want[1]), None)
+        if n is not None:
+            return ns, n, x_sheet_dy(ns, h) or dy
+        time.sleep(1.0)
+    raise FlowError(f"Never saw {what} in X's photo picker")
+
+
+def x_screen(ns: list[dict]) -> str:
+    """Which X screen one read shows: discard | picker | album | composer | home | ?"""
+    if _x_vis(ns, "Button", "Discard"):
+        return "discard"
+    if _x_vis(ns, "Button", "Collections"):
+        return "picker"
+    if any(n["name"] == "photosView_content_scroll_view" for n in ns) or _x_vis(ns, "Button", "Albums"):
+        return "album"  # somewhere inside the picker below its first screen: an album, or the album list
+    if _x_vis(ns, "Button", "Photo library"):
+        return "composer"
+    if _x_vis(ns, "Button", "Compose post"):
+        return "home"
+    return "?"
+
+
+def x_reset(p: Phone) -> None:
+    """Leave whatever an earlier attempt left open (picker, composer, discard sheet) until the
+    blue compose button is on screen. Nothing typed or attached is kept."""
+    relaunched = False
+    for _ in range(8):
+        p.set_depth(X_DEPTH)
+        ns = p.nodes()
+        scr = x_screen(ns)
+        if scr == "home":
+            return
+        if scr == "?":  # the picker's own buttons only show in a deep read
+            p.set_depth(X_PICKER_DEPTH)
+            ns = p.nodes()
+            scr = x_screen(ns)
+            p.set_depth(X_DEPTH)
+        step = {"discard": ("Button", "Discard"), "picker": ("Button", "Cancel"), "album": ("Button", "Back"), "composer": ("Button", "Cancel")}.get(scr)
+        n = _x_vis(ns, *step) if step else None
+        if n is None and scr == "album":
+            # the back button carries the previous screen's name when it isn't plain "Back"
+            n = min((b for b in ns if b["type"] == "Button" and b["visible"] and b["y"] < 80 and b["x"] < 100), key=lambda b: b["x"], default=None)
+        if n is not None:
+            p.log("info", f"Leave the {scr} screen ({step[1]})")
+            dy = x_sheet_dy(ns, p.window_height()) if scr in ("picker", "album") else 0.0
+            p.tap_at(n["cx"], n["cy"] + dy, 1.5)
+            continue
+        if relaunched:
+            break
+        relaunched = True
+        p.relaunch(BUNDLES["x"])
+    raise FlowError("X isn't on a screen with the compose (+) button")
+
+
+def _x_cell_when(label: str):
+    """(month, day, year or None, hour 0-23, minute) from a picker cell's label, or None."""
+    lab = (label or "").upper().replace(" ", " ").replace("\xa0", " ")
+    m = _X_WHEN.search(lab)
+    if not m:
+        return None
+    hour = int(m.group(4))
+    if m.group(6) == "PM" and hour < 12:
+        hour += 12
+    elif m.group(6) == "AM" and hour == 12:
+        hour = 0
+    return _MONTHS.index(m.group(1)) + 1, int(m.group(2)), int(m.group(3)) if m.group(3) else None, hour, int(m.group(5))
+
+
+def _x_cell_is(label: str, spec: ActionSpec, when) -> bool:
+    got = _x_cell_when(label)
+    if got is None or when is None:
+        return False
+    if (label or "").upper().startswith("VIDEO") != (spec.media_kind == "video"):
+        return False
+    month, day, year, hour, minute = got
+    return (month, day, hour, minute) == (when.month, when.day, when.hour, when.minute) and year in (None, when.year)
+
+
+def x_open_album(p: Phone, spots: Spots | None, album: str, dy: float, full_list: bool = False) -> float:
+    """On the picker's Collections tab: open `album`. Its tile is touched when it is among
+    the first of the Albums row; otherwise the row's heading ("Albums >") opens the full list
+    and the album is found there. Returns the sheet's gap from the top of the screen."""
+    w = p.s.window_size()[0]
+    h = p.window_height()
+    ns, head, dy = x_picker_read(p, ("Button", "Albums"), "the Collections tab", dy)
+    tile = None if full_list else next((n for n in ns if n["type"] == "Button" and n["label"] == album and n["x"] >= 0 and n["x"] + n["w"] <= w), None)
+    if tile is not None:
+        if spots is not None:
+            spots.note_and_touch("album", tile["cx"], tile["cy"] + dy, f"'{album}' album", pause=1.8)
+        else:
+            p.tap_at(tile["cx"], tile["cy"] + dy, 1.8)
+        return dy
+    # Two taps can't be replayed as one spot, so a phone that needs the full list keeps the
+    # detailed way for this step (the 'album' spot is never learned).
+    p.log("info", "Tap Albums > (the full list)")
+    p.tap_at(head["x"] + 60, head["cy"] + dy, 2.0)  # on the word itself, at the left of the wide heading
+    for _ in range(10):
+        ns = p.nodes()
+        dy = x_sheet_dy(ns, h) or dy
+        t = next((n for n in ns if n["label"] == album and n["type"] in ("Button", "Cell", "Image", "StaticText", "Other")
+                  and dy + 100 < n["cy"] + dy < h - 60 and 0 <= n["cx"] <= w), None)
+        if t is not None:
+            p.log("info", f"Tap '{album}' album")
+            p.tap_at(t["cx"], t["cy"] + dy - (20 if t["type"] == "StaticText" else 0), 1.8)  # a name sits under its tile
+            return dy
+        p.flick("up", strength=0.6)
+    raise FlowError(f"Couldn't find the '{album}' album in X's photo picker")
+
+
+def x_pick_cell(p: Phone, spec: ActionSpec, album: str, sheet_dy: float = 0.0) -> None:
+    """In the picker's album grid: make sure it is the right album, find this media's cell by
+    its capture time (by its place in the album when the labels can't be read) and touch it."""
+    from datetime import datetime
+    extra = spec.extra or {}
+    fname = (spec.media_filename or "").split("/")[-1]
+    when = None
+    try:
+        when = datetime.fromisoformat(extra["created_at"]) if extra.get("created_at") else None
+    except Exception:
+        pass
+    count, idx = extra.get("album_count"), extra.get("album_index")
+    place = int(count) - 1 - int(idx) if count and idx is not None else None  # the grid runs oldest first
+    h = p.window_height()
+    moves = ["down"] * 6 + ["up"] * 12  # towards the oldest first, then all the way to the newest
+    seen_first: str | None = None
+    for step in range(len(moves) + 1):
+        ns = p.nodes()
+        if not any(n["label"] == album and n["type"] in ("StaticText", "NavigationBar") for n in ns):
+            raise FlowError(f"The photo picker didn't open the '{album}' album")
+        dy = x_sheet_dy(ns, h) or sheet_dy
+        cells = sorted((n for n in ns if n["name"] == X_CELL and n["type"] == "Image"), key=lambda n: (round(n["y"]), n["x"]))
+        hits = [c for c in cells if _x_cell_is(c["label"], spec, when)]
+        target = None
+        if len(hits) == 1:
+            target = hits[0]
+        elif place is not None and len(cells) == int(count) and 0 <= place < len(cells):
+            by_place = cells[place]
+            readable = any(_x_cell_when(c["label"]) for c in cells)
+            if by_place in hits or not readable:
+                target = by_place
+                p.log("info", f"Cell chosen by its place in the album ({place + 1} of {len(cells)})")
+        if len(hits) > 1 and target is None:
+            raise FlowError(f"{len(hits)} items in '{album}' were taken in the same minute as {fname}; can't tell them apart")
+        if target is not None:
+            y = target["cy"] + dy
+            if y < dy + 110:
+                p.flick("down", strength=0.3)
+                continue
+            if y > h - 150:
+                p.flick("up", strength=0.3)
+                continue
+            p.log("info", f"Tap {fname} in '{album}' ({target['label'].replace(chr(0x202f), ' ')})")
+            p.tap_at(target["cx"], y, 1.0)
+            return
+        if step >= len(moves):
+            break
+        first = cells[0]["label"] if cells else ""
+        if step and first == seen_first and moves[step] == moves[step - 1]:
+            # that end of the album is reached; skip to the other direction
+            rest = [i for i in range(step, len(moves)) if moves[i] != moves[step]]
+            if not rest:
+                break
+            moves = moves[:step] + moves[rest[0]:]
+            if step >= len(moves):
+                break
+        seen_first = first
+        p.flick(moves[step], strength=0.8)
+    raise FlowError(f"{fname} isn't in the '{album}' album as X's photo picker shows it. Check the album in Photos, then Sync.")
+
+
+def x_wait_sent(p: Phone, spec: ActionSpec, fast: bool) -> str:
+    """After Post the composer closes at once and X sends the post in the background. A photo
+    is up within a second or two; a video shows a banner at the top of the timeline
+    ("Finalizing…" with Cancel, seen 2026-11-16) until it is. Wait for a video's banner to go
+    so the job isn't called done, and the phone isn't locked, in the middle of the upload.
+    Never raises: the post has left the composer by now, whatever this sees. Returns the
+    job's result message."""
+    try:
+        if spec.media_kind != "video":
+            if not fast and p.exists(predicate="label CONTAINS[c] 'post was sent'", timeout=5):
+                p.log("info", "X says: Your post was sent")
+            return "Posted on X"
+        p.set_depth(30)
+        t0, clear, first = time.time(), 0, True
+        while time.time() - t0 < 180:
+            top = " | ".join(n["label"] for n in p.nodes() if n["visible"] and n["label"] and n["y"] < 150).lower()
+            if first:
+                p.log("info", f"Top of X right after Post: {top[:140] or 'nothing readable'}")
+                first = False
+            if "post was sent" in top:
+                p.log("info", "X says: Your post was sent")
+                return "Posted on X"
+            busy = any(w in top for w in ("finaliz", "upload", "sending", "processing"))
+            clear = 0 if busy else clear + 1
+            if clear >= 2:
+                return "Posted on X"
+            time.sleep(2)
+        p.log("warn", "X was still sending the video after 3 minutes")
+        return "Posted on X (the video was still uploading when last checked)"
+    except FlowAborted:
+        raise
+    except Exception as e:
+        p.log("warn", f"Couldn't watch the upload finish ({e})")
+        return "Posted on X"
+    finally:
+        p.set_depth(X_DEPTH)
+
+
+def x_discard(p: Phone) -> None:
+    """Close the composer without posting and without keeping a draft."""
+    if p.tap_if(predicate="type == 'XCUIElementTypeButton' AND label == 'Cancel' AND visible == 1", what="Cancel", timeout=6, pause=1.2):
+        p.tap_if(predicate="type == 'XCUIElementTypeButton' AND label == 'Discard' AND visible == 1", what="Discard", timeout=4, pause=1.5)
+
+
 def x_post(p: Phone, spec: ActionSpec):
-    p.open(BUNDLES["x"])
-    return False, "X post flow not written yet"
+    extra = spec.extra or {}
+    album = extra.get("album")
+    fname = (spec.media_filename or "").split("/")[-1]
+    if spec.media_index is None or not spec.media_filename:
+        raise FlowError("No media chosen")
+    if not album:
+        raise FlowGiveUp(f"{fname} is not in the '{extra.get('album_wanted') or 'X Queue'}' album on the phone. Add it in Photos, press Sync, then run this again.")
+    handle = (spec.handle or "").lstrip("@").lower()
+    spots = Spots(p, f"x_spots:{p.device_id}", X_SPOTS)
+    state = {"pressed": False}
+
+    def stages(fast: bool):
+        def open_():
+            p.open(BUNDLES["x"])
+            p.set_depth(X_DEPTH)
+            if fast:
+                if not spots.same_screen():
+                    raise FlowError("the screen size differs from when the spots were learned")
+            else:
+                x_reset(p)
+                state["home"] = True
+
+        def pick():
+            if fast:
+                spots.touch("compose", "Compose post (+)", pause=1.6)
+                spots.touch("library", "Photo library", pause=2.4)
+                spots.touch("collections", "Collections", pause=1.4)
+                spots.touch("album", f"'{album}' album", pause=1.8)
+                p.set_depth(X_PICKER_DEPTH)
+                x_pick_cell(p, spec, album, float(spots.rec.get("dy") or 0))
+                p.set_depth(X_DEPTH)
+                spots.touch("done", "Done (the tick)", pause=2.6)
+                return
+            if not state.pop("home", False):
+                x_reset(p)
+            spots.find_and_touch("compose", "Compose post (+)", pause=1.5,
+                                 predicate="type == 'XCUIElementTypeButton' AND label == 'Compose post' AND visible == 1")
+            spots.find_and_touch("library", "Photo library", pause=2.2, timeout=20, predicate=X_COMPOSER)
+            # inside the picker one read per screen gives every place needed, and the sheet's gap
+            p.set_depth(X_PICKER_DEPTH)
+            ns, n, dy = x_picker_read(p, ("Button", "Collections"), "Collections")
+            spots.dy = dy
+            spots.note_and_touch("collections", n["cx"], n["cy"] + dy, "Collections", pause=1.6)
+            dy = x_open_album(p, spots, album, dy, full_list=bool(extra.get("x_full_list")))
+            x_pick_cell(p, spec, album, dy)
+            ns = p.nodes()
+            dy = x_sheet_dy(ns, p.window_height()) or dy
+            if not any(n["type"] == "Button" and n["label"].startswith("1 ") for n in ns):
+                raise FlowError(f"{fname} didn't get selected in the photo picker")
+            done = next((n for n in ns if n["type"] == "Button" and n["label"] == "Done" and n["visible"]), None)
+            if done is None:
+                raise FlowError("Never saw Done (the tick) in X's photo picker")
+            spots.note_and_touch("done", done["cx"], done["cy"] + dy, "Done (the tick)", pause=2.5)
+            p.set_depth(X_DEPTH)
+            p.wait(predicate=X_COMPOSER, what="the composer with the media attached", timeout=25)
+
+        def compose():
+            # The cursor is in the text box after a photo is attached but not after a video,
+            # so the box is always touched first.
+            if fast:
+                if spec.caption:
+                    spots.touch("text", "the text box", pause=0.8)
+                    p.type(spec.caption, "the post")
+                return
+            e = p.el(predicate="type == 'XCUIElementTypeTextView' AND visible == 1").wait(timeout=8, raise_error=False)
+            if e:
+                b = e.bounds
+                spots.note_and_touch("text", b.x + b.width / 2, b.y + b.height / 2, "the text box", pause=0.8)
+            elif spec.caption:
+                raise FlowError("Never saw the text box on X's composer")
+            if spec.caption:
+                p.type(spec.caption, "the post")
+
+        def post():
+            p.set_depth(22)  # the attachment's own buttons sit a little deeper than the toolbar
+            ns = p.nodes()
+            p.set_depth(X_DEPTH)
+            if not _x_vis(ns, "Button", "Photo library"):
+                raise FlowError("Not on X's composer (run the 'pick' stage first)")
+            who = next((n["label"] for n in ns if n["type"] == "Button" and n["visible"] and "@" in n["label"]), "")
+            if who and handle and f"@{handle}" not in who.lower().replace("⁦", "").replace("⁩", "").replace("‪", "").replace("‬", ""):
+                x_discard(p)
+                raise FlowGiveUp(f"X is on another account ({who.strip()}), not @{handle}. Switch accounts in X on the phone, then run this again.")
+            if not who:
+                p.log("warn", "Couldn't read which account X is on; carrying on")
+            attached = [n for n in ns if n["type"] == "Button" and n["visible"] and n["label"].startswith("Delete ")]
+            if len(attached) != 1:
+                raise FlowError("No media is attached to the post" if not attached else f"{len(attached)} items are attached to the post; expected one")
+            if spec.caption:
+                box = next((n for n in ns if n["type"] == "TextView" and n["visible"]), None)
+                typed = (box["value"] if box else "").strip()
+                if not typed or typed.startswith("What’s happening"):
+                    raise FlowError("The caption didn't go into the post")
+                if " ".join(typed.lower().split()) != " ".join(spec.caption.lower().split()):
+                    p.log("warn", f"The caption reads a little differently on the phone ({typed[:80]!r}); the keyboard may have corrected it")
+            btn = _x_vis(ns, "Button", "Post")
+            if btn is None or not btn["enabled"]:
+                raise FlowError("X's Post button isn't ready")
+            if extra.get("dry_run"):
+                p.log("info", "DRY RUN: stopping before 'Post' and discarding the draft")
+                x_discard(p)
+                return True, "Dry run reached Post"
+            p.log("info", "Tap Post")
+            p.tap_at(btn["cx"], btn["cy"], 1.5)
+            state["pressed"] = True
+            for _ in range(20):
+                if not p.exists(predicate=X_COMPOSER, timeout=1):
+                    return True, x_wait_sent(p, spec, fast)
+                time.sleep(1.0)
+            raise FlowError("X's composer is still open after Post")
+
+        return [("open", open_), ("pick", pick), ("compose", compose), ("post", post)]
+
+    whole = not extra.get("stage_only") and extra.get("stage_from") in (None, "", "open")
+    t0 = time.time()
+    if whole and extra.get("fast", True) and not extra.get("x_full_list") and spots.ready(album):
+        try:
+            r = run_stages(p.log, spec, stages(True))
+            p.log("info", f"Fast run (remembered spots) took {time.time() - t0:.0f}s")
+            return r
+        except (FlowGiveUp, FlowAborted):
+            raise
+        except Exception as e:
+            if state["pressed"]:
+                raise
+            p.log("warn", f"The fast run went wrong ({e}). Forgetting the remembered spots and doing this post the detailed way.")
+            spots.forget()
+            t0 = time.time()
+    r = run_stages(p.log, spec, stages(False))
+    spots.save(album)
+    p.log("info", f"Detailed run took {time.time() - t0:.0f}s")
+    return r
 
 
 FLOWS = {
@@ -1098,6 +1613,7 @@ def run(driver, spec: ActionSpec, log: LogFn) -> ActionResult:
         from .ios_blind import run_blind
         return run_blind(driver, spec, log)
     phone = Phone(driver.base, log)
+    phone.device_id = str(getattr(driver, "device_id", "") or "")
     fn = FLOWS.get(spec.action)
     if fn is None:
         return ActionResult(False, f"No flow for {spec.action}")
